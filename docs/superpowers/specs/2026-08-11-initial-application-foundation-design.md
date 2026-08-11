@@ -16,9 +16,11 @@ Authentication, databases, APIs, analytics, state-management libraries, video li
 
 ## Architecture
 
-The project is a single TanStack Start application built with React, TypeScript, Tailwind CSS, and pnpm. It uses TanStack Start file-based routing and a shared site shell for the wordmark, minimal navigation, footer, metadata, and consistent layout.
+The project is a single TanStack Start application built with React, TypeScript, Tailwind CSS, and pnpm. It uses TanStack Start file-based routing and shared layout primitives for the wordmark, navigation, metadata, and consistent page framing where useful.
 
 Route content remains explicit and separate. The foundation does not add server routes, processing services, domain abstractions, or state that future work does not yet require.
+
+Keep route-specific static content in the route unless extraction materially improves reuse or readability. Avoid components that only wrap a few lines of unique static markup.
 
 ## Page Design
 
@@ -44,13 +46,13 @@ Decoration is subtle and static. The design avoids gradients as a primary device
 
 ## Behavior and Accessibility
 
-Navigation uses TanStack Start links, and each route supports direct navigation. Semantic landmarks, visible keyboard focus, readable contrast, and reduced-motion-safe styling are required. The unfinished upload surface communicates its status in visible copy and appropriate semantics.
+Navigation uses TanStack Start links, and each route supports direct navigation. Semantic landmarks, visible keyboard focus, readable contrast, and reduced-motion-safe styling are required. The unfinished upload surface communicates its status in visible copy. It is non-interactive presentation rather than a disabled form control.
 
 There is no video data flow or simulated processing/error state in this release. The application must not imply that selection, processing, saving, or sharing already works.
 
 ## Metadata and Tooling
 
-The root document supplies a concise default title and description. The project uses strict TypeScript and the current linting and formatting setup recommended by the TanStack ecosystem, verified against current documentation before scaffolding.
+The root document supplies a concise default title and description. The project uses strict TypeScript and an idiomatic linting and formatting setup compatible with the selected TanStack Start scaffold.
 
 Package scripts cover development, production build, type checking, linting, formatting, and formatting verification where supported by the selected tooling.
 
