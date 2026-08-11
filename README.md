@@ -5,8 +5,8 @@ they can be used as longer Instagram Stories. The intended workflow keeps video 
 on the user's device.
 
 > [!NOTE]
-> Local video selection and preview are implemented. Processing, export, and sharing are not
-> available yet.
+> Local video selection, preview, and target choice are implemented. Processing, export, and
+> sharing are not available yet.
 
 ## Stack
 
