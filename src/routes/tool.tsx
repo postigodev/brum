@@ -25,7 +25,7 @@ function ToolPage() {
         </h2>
         <div className="ios-group">
           <div className="ios-group-row">Select</div>
-          <div className="ios-group-row">Choose a duration</div>
+          <div className="ios-group-row">Choose a target</div>
           <div className="ios-group-row">Extend locally</div>
           <div className="ios-group-row">Save or share</div>
         </div>

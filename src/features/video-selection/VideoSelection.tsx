@@ -1,10 +1,20 @@
 import { useEffect, useRef, useState } from "react"
+import {
+  createExtensionPlan,
+  DURATION_TARGETS,
+  isDurationTargetAvailable,
+  LOOP_TARGETS,
+  type TargetMode,
+} from "./extension-plan"
 
-type TargetMode = "duration" | "loops"
+type MetadataState =
+  | { status: "loading" }
+  | { status: "ready"; duration: number }
+  | { status: "error" }
 
 const TARGET_OPTIONS = {
-  duration: [15, 30, 45, 60],
-  loops: [2, 3, 5, 10],
+  duration: DURATION_TARGETS,
+  loops: LOOP_TARGETS,
 } as const
 
 function formatFileSize(bytes: number) {
@@ -19,6 +29,10 @@ function formatFileSize(bytes: number) {
   return `${new Intl.NumberFormat("en", { maximumFractionDigits: 1 }).format(value)} ${units[unitIndex]}`
 }
 
+function formatDuration(seconds: number) {
+  return `${new Intl.NumberFormat("en", { maximumFractionDigits: 2 }).format(seconds)} s`
+}
+
 export function VideoSelection() {
   const inputRef = useRef<HTMLInputElement>(null)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
@@ -27,6 +41,7 @@ export function VideoSelection() {
   const [status, setStatus] = useState("No video selected.")
   const [targetMode, setTargetMode] = useState<TargetMode>("duration")
   const [targetValue, setTargetValue] = useState<number | null>(null)
+  const [metadata, setMetadata] = useState<MetadataState>({ status: "loading" })
 
   useEffect(() => {
     if (!selectedFile) {
@@ -61,6 +76,7 @@ export function VideoSelection() {
     if (file.type && !file.type.startsWith("video/")) {
       setSelectedFile(null)
       resetTarget()
+      setMetadata({ status: "loading" })
       setError("Choose a video file to continue.")
       setStatus("The selected file is not a video.")
       event.currentTarget.value = ""
@@ -68,6 +84,7 @@ export function VideoSelection() {
     }
 
     setError(null)
+    setMetadata({ status: "loading" })
     setSelectedFile(file)
     setStatus(`${file.name} selected. The file remains on this device.`)
   }
@@ -75,6 +92,7 @@ export function VideoSelection() {
   function removeSelection() {
     setSelectedFile(null)
     resetTarget()
+    setMetadata({ status: "loading" })
     setError(null)
     setStatus("Video removed.")
 
@@ -103,11 +121,77 @@ export function VideoSelection() {
     )
   }
 
+  function handleLoadedMetadata(event: React.SyntheticEvent<HTMLVideoElement>) {
+    const duration = event.currentTarget.duration
+
+    if (!Number.isFinite(duration) || duration <= 0) {
+      handleMetadataError()
+      return
+    }
+
+    setMetadata({ status: "ready", duration })
+    setError(null)
+
+    if (
+      targetMode === "duration" &&
+      targetValue !== null &&
+      !isDurationTargetAvailable(duration, targetValue)
+    ) {
+      setTargetValue(null)
+      setStatus("The previous duration does not extend this video. Choose a longer target.")
+      return
+    }
+
+    setStatus(`Video duration read: ${formatDuration(duration)}.`)
+  }
+
+  function handleMetadataError() {
+    setMetadata({ status: "error" })
+    setTargetValue(null)
+    setError("Brumaire could not read this video's duration. Choose another video.")
+    setStatus("Video duration could not be read.")
+  }
+
   const activeTargetOptions = TARGET_OPTIONS[targetMode]
-  const targetDescription =
-    targetValue === null
-      ? "Choose a target. Extension is not available yet."
-      : `Target selected: ${targetValue}${targetMode === "duration" ? " seconds" : "× total plays"}. Extension is not available yet.`
+  const sourceDuration = metadata.status === "ready" ? metadata.duration : null
+  const planResult =
+    sourceDuration !== null && targetValue !== null
+      ? createExtensionPlan(sourceDuration, { mode: targetMode, value: targetValue })
+      : null
+  const plan = planResult?.ok ? planResult.plan : null
+
+  function isTargetDisabled(value: number) {
+    if (sourceDuration === null) {
+      return true
+    }
+
+    return targetMode === "duration" && !isDurationTargetAvailable(sourceDuration, value)
+  }
+
+  const targetDescription = (() => {
+    if (metadata.status === "loading") {
+      return "Reading video duration…"
+    }
+
+    if (metadata.status === "error") {
+      return "Choose another video so Brumaire can calculate an extension plan."
+    }
+
+    if (!plan) {
+      return "Choose a target. Extension is not available yet."
+    }
+
+    if (plan.target.mode === "loops") {
+      return `${plan.totalPlays} total plays · ${formatDuration(plan.outputDuration)} output. Extension is not available yet.`
+    }
+
+    const trimCopy =
+      plan.finalPartialDuration === null
+        ? "complete plays only"
+        : `final play trimmed to ${formatDuration(plan.finalPartialDuration)}`
+
+    return `${formatDuration(plan.outputDuration)} exact · ${plan.totalPlays} total plays · ${trimCopy}. Extension is not available yet.`
+  })()
 
   return (
     <>
@@ -127,18 +211,15 @@ export function VideoSelection() {
               {previewUrl ? (
                 // biome-ignore lint/a11y/useMediaCaption: User-selected local videos do not have an associated captions file.
                 <video
+                  key={previewUrl}
                   className="ios-video-element"
                   src={previewUrl}
                   controls
                   playsInline
                   preload="metadata"
                   aria-label={`Preview of ${selectedFile.name}`}
-                  onLoadedMetadata={() => setError(null)}
-                  onError={() =>
-                    setError(
-                      "This video cannot be previewed in this browser. Choose another video.",
-                    )
-                  }
+                  onLoadedMetadata={handleLoadedMetadata}
+                  onError={handleMetadataError}
                 />
               ) : (
                 <p className="ios-selection-status">Preparing preview…</p>
@@ -151,7 +232,9 @@ export function VideoSelection() {
                   {selectedFile.name}
                 </h2>
                 <p className="ios-selection-status">
-                  {formatFileSize(selectedFile.size)} · Local file
+                  {formatFileSize(selectedFile.size)}
+                  {metadata.status === "ready" ? ` · ${formatDuration(metadata.duration)}` : ""}
+                  {" · Local file"}
                 </p>
               </div>
               <div className="ios-selection-actions">
@@ -235,24 +318,37 @@ export function VideoSelection() {
               {targetMode === "duration" ? "Target duration" : "Total loops"}
             </legend>
             <div className="ios-group">
-              {activeTargetOptions.map((value) => (
-                <label className="ios-target-option" key={`${targetMode}-${value}`}>
-                  <input
-                    className="ios-visually-hidden"
-                    type="radio"
-                    name="target-value"
-                    value={value}
-                    checked={targetValue === value}
-                    onChange={() => selectTarget(value)}
-                  />
-                  <span>
-                    {targetMode === "duration" ? `${value} seconds` : `${value}× total plays`}
-                  </span>
-                  <span className="ios-target-check" aria-hidden="true">
-                    {targetValue === value ? "✓" : ""}
-                  </span>
-                </label>
-              ))}
+              {activeTargetOptions.map((value) => {
+                const disabled = isTargetDisabled(value)
+                const unavailable =
+                  metadata.status === "ready" && targetMode === "duration" && disabled
+
+                return (
+                  <label className="ios-target-option" key={`${targetMode}-${value}`}>
+                    <input
+                      className="ios-visually-hidden"
+                      type="radio"
+                      name="target-value"
+                      value={value}
+                      checked={targetValue === value}
+                      disabled={disabled}
+                      onChange={() => selectTarget(value)}
+                    />
+                    <span>
+                      {targetMode === "duration" ? `${value} seconds` : `${value}× total plays`}
+                    </span>
+                    <span className="ios-target-option-trailing">
+                      {unavailable ? (
+                        <span className="ios-target-unavailable">Unavailable</span>
+                      ) : (
+                        <span className="ios-target-check" aria-hidden="true">
+                          {targetValue === value ? "✓" : ""}
+                        </span>
+                      )}
+                    </span>
+                  </label>
+                )
+              })}
             </div>
           </fieldset>
 

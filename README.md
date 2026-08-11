@@ -5,8 +5,8 @@ they can be used as longer Instagram Stories. The intended workflow keeps video 
 on the user's device.
 
 > [!NOTE]
-> Local video selection, preview, and target choice are implemented. Processing, export, and
-> sharing are not available yet.
+> Local video selection, preview, target choice, and extension planning are implemented.
+> Video processing, export, and sharing are not available yet.
 
 ## Stack
 
@@ -30,6 +30,7 @@ The development server runs at `http://localhost:3000`.
 ## Validation
 
 ```bash
+pnpm test
 pnpm typecheck
 pnpm lint
 pnpm format:check

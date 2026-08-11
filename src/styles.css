@@ -426,6 +426,25 @@
     cursor: pointer;
   }
 
+  .ios-target-option:has(input:disabled) {
+    color: var(--color-ios-secondary);
+    cursor: default;
+  }
+
+  .ios-target-option-trailing {
+    display: flex;
+    min-width: 78px;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: flex-end;
+  }
+
+  .ios-target-unavailable {
+    color: var(--color-ios-secondary);
+    font-size: 0.8125rem;
+    font-weight: 400;
+  }
+
   .ios-target-option + .ios-target-option {
     border-top: 1px solid var(--color-ios-row-divider);
   }
