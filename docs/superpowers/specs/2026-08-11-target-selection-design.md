@@ -35,4 +35,4 @@ Native radio inputs provide keyboard selection and group semantics. Mode and tar
 
 ## Validation
 
-Run Biome, strict TypeScript, and the production build. In a mobile viewport, verify that controls remain hidden before file selection; all duration and loop presets are selectable; switching mode clears the previous target; removing the video clears the target; reselection starts clean; no overflow or console error appears; and no processing or upload request occurs.
+Run Biome, strict TypeScript, and the production build. In a mobile viewport, verify that controls remain hidden before file selection; all duration and loop presets are selectable; switching mode clears the previous target; direct valid replacement preserves the current mode and value; Remove followed by a new selection starts in Duration with no value; no overflow or console error appears; and no processing or upload request occurs.
