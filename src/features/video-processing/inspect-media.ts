@@ -1,0 +1,200 @@
+import {
+  BlobSource,
+  EncodedPacketSink,
+  Input,
+  type InputAudioTrack,
+  type InputTrack,
+  type InputVideoTrack,
+  MP4,
+} from "mediabunny"
+
+import { RemuxError, throwIfAborted, toRemuxError } from "./errors"
+import { TIMELINE_TOLERANCE_SECONDS } from "./packet-schedule"
+import type { AudioTrackSummary, MediaInspection, PacketRecord, VideoTrackSummary } from "./types"
+
+function toHex(bytes: Uint8Array) {
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")
+}
+
+export async function hashPacket(data: Uint8Array) {
+  const digest = await crypto.subtle.digest("SHA-256", Uint8Array.from(data))
+  return toHex(new Uint8Array(digest))
+}
+
+async function readPackets(track: InputTrack, signal?: AbortSignal) {
+  const packets: PacketRecord[] = []
+  const sink = new EncodedPacketSink(track)
+  let sourceIndex = 0
+
+  for await (const packet of sink.packets(undefined, undefined, {
+    verifyKeyPackets: track.isVideoTrack(),
+  })) {
+    throwIfAborted(signal)
+    packets.push({
+      sourceIndex,
+      timestamp: packet.timestamp,
+      duration: packet.duration,
+      sequenceNumber: packet.sequenceNumber,
+      type: packet.type,
+      data: packet.data.slice(),
+      hash: await hashPacket(packet.data),
+    })
+    sourceIndex += 1
+  }
+
+  return packets
+}
+
+async function inspectVideo(track: InputVideoTrack, duration: number, signal?: AbortSignal) {
+  const codec = await track.getCodec()
+  if (codec !== "avc") {
+    throw new RemuxError("unsupported-video-codec", "Only H.264 video is supported.")
+  }
+
+  const decoderConfig = await track.getDecoderConfig()
+  const codecString = await track.getCodecParameterString()
+  if (!decoderConfig || !codecString) {
+    throw new RemuxError("unsupported-video-codec", "The H.264 configuration is incomplete.")
+  }
+
+  const packets = await readPackets(track, signal)
+  if (packets.length === 0 || packets[0]?.type !== "key") {
+    throw new RemuxError(
+      "missing-initial-key-packet",
+      "The first video packet must be independently decodable.",
+    )
+  }
+
+  return {
+    kind: "video",
+    codec,
+    codecString,
+    codedWidth: await track.getCodedWidth(),
+    codedHeight: await track.getCodedHeight(),
+    displayWidth: await track.getDisplayWidth(),
+    displayHeight: await track.getDisplayHeight(),
+    rotation: await track.getRotation(),
+    pixelAspectRatio: await track.getPixelAspectRatio(),
+    colorSpace: await track.getColorSpace(),
+    decoderConfig,
+    duration,
+    packets,
+  } satisfies VideoTrackSummary
+}
+
+async function inspectAudio(track: InputAudioTrack, duration: number, signal?: AbortSignal) {
+  const codec = await track.getCodec()
+  if (codec !== "aac") {
+    throw new RemuxError("unsupported-audio-codec", "Only AAC audio is supported.")
+  }
+
+  const decoderConfig = await track.getDecoderConfig()
+  const codecString = await track.getCodecParameterString()
+  if (!decoderConfig || !codecString) {
+    throw new RemuxError("unsupported-audio-codec", "The AAC configuration is incomplete.")
+  }
+
+  return {
+    kind: "audio",
+    codec,
+    codecString,
+    sampleRate: await track.getSampleRate(),
+    numberOfChannels: await track.getNumberOfChannels(),
+    decoderConfig,
+    duration,
+    packets: await readPackets(track, signal),
+  } satisfies AudioTrackSummary
+}
+
+function assertTrackTimeline(firstTimestamp: number, duration: number, containerDuration: number) {
+  if (
+    Math.abs(firstTimestamp) > TIMELINE_TOLERANCE_SECONDS ||
+    Math.abs(duration - containerDuration) > TIMELINE_TOLERANCE_SECONDS
+  ) {
+    throw new RemuxError(
+      "unsupported-timeline",
+      "All supported tracks must share a zero origin and equal duration.",
+    )
+  }
+}
+
+export async function inspectMedia(blob: Blob, signal?: AbortSignal): Promise<MediaInspection> {
+  throwIfAborted(signal)
+  const input = new Input({ formats: [MP4], source: new BlobSource(blob) })
+
+  try {
+    if (!(await input.canRead()) || (await input.getFormat()) !== MP4) {
+      throw new RemuxError("invalid-container", "The selected file is not a readable MP4.")
+    }
+
+    const tracks = await input.getTracks()
+    const videoTracks = tracks.filter((track) => track.isVideoTrack())
+    const audioTracks = tracks.filter((track) => track.isAudioTrack())
+    if (
+      videoTracks.length !== 1 ||
+      audioTracks.length > 1 ||
+      tracks.length !== videoTracks.length + audioTracks.length
+    ) {
+      throw new RemuxError(
+        "unsupported-track-layout",
+        "The MP4 must contain one video track and at most one audio track.",
+      )
+    }
+
+    let videoCodec: Awaited<ReturnType<InputVideoTrack["getCodec"]>> = null
+    try {
+      videoCodec = await (videoTracks[0] as InputVideoTrack).getCodec()
+    } catch {
+      // Some unknown MP4 sample entries fail while Mediabunny resolves the normalized codec.
+    }
+    if (videoCodec !== "avc") {
+      throw new RemuxError("unsupported-video-codec", "Only H.264 video is supported.")
+    }
+    if (audioTracks[0]) {
+      let audioCodec: Awaited<ReturnType<InputAudioTrack["getCodec"]>> = null
+      try {
+        audioCodec = await (audioTracks[0] as InputAudioTrack).getCodec()
+      } catch {
+        // Classify an unreadable audio sample entry as an unsupported input, not a remux crash.
+      }
+      if (audioCodec !== "aac") {
+        throw new RemuxError("unsupported-audio-codec", "Only AAC audio is supported.")
+      }
+    }
+
+    const duration = await input.computeDuration(tracks)
+    if (!Number.isFinite(duration) || duration <= 0) {
+      throw new RemuxError("invalid-duration", "The MP4 duration is invalid.")
+    }
+
+    for (const track of tracks) {
+      const [firstTimestamp, trackDuration] = await Promise.all([
+        input.getFirstTimestamp([track]),
+        track.computeDuration(),
+      ])
+      assertTrackTimeline(firstTimestamp, trackDuration, duration)
+    }
+
+    throwIfAborted(signal)
+    const video = await inspectVideo(videoTracks[0] as InputVideoTrack, duration, signal)
+    const audio = audioTracks[0]
+      ? await inspectAudio(audioTracks[0] as InputAudioTrack, duration, signal)
+      : null
+
+    const sharedOrigin = Math.min(
+      video.packets[0]?.timestamp ?? 0,
+      audio?.packets[0]?.timestamp ?? 0,
+    )
+    for (const packet of video.packets) packet.timestamp -= sharedOrigin
+    if (audio) {
+      for (const packet of audio.packets) packet.timestamp -= sharedOrigin
+    }
+
+    return { duration, video, audio }
+  } catch (error) {
+    if (error instanceof RemuxError) throw error
+    throw toRemuxError(error)
+  } finally {
+    input.dispose()
+  }
+}

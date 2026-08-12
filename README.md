@@ -6,7 +6,8 @@ on the user's device.
 
 > [!NOTE]
 > Local video selection, preview, target choice, and extension planning are implemented.
-> Video processing, export, and sharing are not available yet.
+> Packet-preserving MP4 processing is currently an internal feasibility spike; it is not
+> connected to the product tool yet. Export and sharing are not available in `/tool`.
 
 ## Stack
 
@@ -26,6 +27,9 @@ pnpm dev
 ```
 
 The development server runs at `http://localhost:3000`.
+
+During development, `/__spike/remux` exposes the local H.264/AAC remux harness. The route is
+unlinked, returns not found in production, and has not yet been validated on a physical iPhone.
 
 ## Validation
 

@@ -522,6 +522,125 @@
     color: var(--color-ios-secondary);
   }
 
+  .spike-main {
+    display: grid;
+    gap: 24px;
+  }
+
+  .spike-intro {
+    max-width: 440px;
+  }
+
+  .spike-panel {
+    padding: 16px;
+  }
+
+  .spike-heading {
+    margin: 0 0 14px;
+    font-size: 1.0625rem;
+  }
+
+  .spike-panel input[type="file"] {
+    display: block;
+    max-width: 100%;
+    color: var(--color-ios-secondary);
+    font: inherit;
+  }
+
+  .spike-detail {
+    margin: 12px 0 0;
+    overflow-wrap: anywhere;
+    color: var(--color-ios-secondary);
+    font-size: 0.875rem;
+    line-height: 1.4;
+  }
+
+  .spike-facts {
+    display: grid;
+    gap: 8px;
+    margin: 16px 0 0;
+  }
+
+  .spike-facts div {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+  }
+
+  .spike-facts dt {
+    color: var(--color-ios-secondary);
+  }
+
+  .spike-facts dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+    text-align: right;
+  }
+
+  .spike-segments,
+  .spike-targets,
+  .spike-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .spike-targets,
+  .spike-actions {
+    margin-top: 12px;
+  }
+
+  .spike-segments button,
+  .spike-targets button,
+  .spike-run,
+  .spike-cancel {
+    min-height: 44px;
+    border: 1px solid var(--color-ios-boundary);
+    border-radius: 8px;
+    background: var(--color-ios-grouped);
+    padding-inline: 14px;
+    color: var(--color-ios-label);
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .spike-segments button.is-selected,
+  .spike-targets button.is-selected {
+    border-color: var(--color-ios-blue);
+    color: var(--color-ios-blue);
+  }
+
+  .spike-segments button:disabled,
+  .spike-targets button:disabled,
+  .spike-run:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+
+  .spike-run {
+    border-color: var(--color-ios-blue);
+    background: var(--color-ios-blue);
+    color: white;
+    font-weight: 600;
+  }
+
+  .spike-video {
+    display: block;
+    width: 100%;
+    max-height: 420px;
+    border-radius: 8px;
+    background: black;
+  }
+
+  .spike-report {
+    max-width: 100%;
+    overflow: auto;
+    border-radius: 8px;
+    background: var(--color-ios-grouped);
+    padding: 12px;
+    font-size: 0.75rem;
+  }
+
   @media (min-width: 640px) {
     .ios-header-inner {
       padding-inline: 24px;
