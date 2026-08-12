@@ -8,7 +8,7 @@ Accept ordinary H.264/AAC MP4 files whose video track ends slightly before the c
 
 The container and all tracks must still begin at time zero within the existing 1 ms tolerance. A video track may end up to 250 ms before the container when an AAC track covers the full container duration. Larger gaps, a short audio track, or non-zero track origins remain unsupported.
 
-For an accepted gap, the container duration remains the authoritative source-cycle duration. Brumaire extends only the presentation duration of the final encoded video packet to the cycle boundary. Players therefore hold the last decoded frame during the gap, matching normal playback of the source file. Video payload bytes and AAC packets remain unchanged.
+For an accepted gap, the container duration remains the authoritative source-cycle duration. Brumaire extends only the presentation duration of the encoded video packet with the latest presentation end to the cycle boundary; this remains correct when decode order differs because of B-frames. Players therefore hold the last decoded frame during the gap, matching normal playback of the source file. Video payload bytes and AAC packets remain unchanged.
 
 ## Processing and verification
 
@@ -18,4 +18,4 @@ Existing strict rejection remains for unsupported codecs, layouts, origins, audi
 
 ## Tests
 
-Add a small deterministic H.264/AAC fixture with a 162 ms video tail gap. Tests must prove that inspection accepts it, a two-loop export is exact, every cycle holds the final frame through its boundary, video hashes and audio packets are preserved, and the existing invalid-timeline cases remain rejected.
+Add a small deterministic H.264/AAC fixture with a 162 ms video tail gap. Tests must prove that inspection accepts it, a two-loop export is exact, every cycle holds the final frame through its boundary, a duration cutoff inside the tail gap remains exact, video hashes and audio packets are preserved, and the existing invalid-timeline cases remain rejected.
