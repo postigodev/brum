@@ -4,12 +4,13 @@ import { RemuxError, throwIfAborted } from "./errors"
 import type { PacketLedgerEntry, PacketRecord, TrackKind } from "./types"
 
 export const TIMELINE_TOLERANCE_SECONDS = 0.001
+export const METADATA_DURATION_TOLERANCE_SECONDS = 0.05
 
 export function assertPlanMatchesSource(plan: ExtensionPlan, inspectedDuration: number) {
   if (!Number.isFinite(inspectedDuration) || inspectedDuration <= 0) {
     throw new RemuxError("invalid-duration", "The input duration is invalid.")
   }
-  if (Math.abs(plan.sourceDuration - inspectedDuration) > TIMELINE_TOLERANCE_SECONDS) {
+  if (Math.abs(plan.sourceDuration - inspectedDuration) > METADATA_DURATION_TOLERANCE_SECONDS) {
     throw new RemuxError(
       "plan-duration-mismatch",
       "The extension plan no longer matches the selected file.",

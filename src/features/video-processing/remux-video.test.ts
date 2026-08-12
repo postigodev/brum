@@ -74,6 +74,17 @@ describe("local MP4 remux", () => {
     expect(result.verification.packetLedger).toBe(true)
   })
 
+  it("reconciles browser-rounded metadata with the inspected MP4 duration", async () => {
+    const file = await fixture("h264-aac.mp4")
+    const source = await inspectMedia(file)
+    const roundedDuration = source.duration - 0.002
+    const result = await remuxVideo(file, loopPlan(roundedDuration))
+
+    expect(source.duration - roundedDuration).toBeCloseTo(0.002, 6)
+    expect(result.duration).toBeCloseTo(source.duration * 2, 3)
+    expect(result.verification.duration).toBe(true)
+  })
+
   it("holds a short video track through full AAC cycle boundaries", async () => {
     const file = await fixture("h264-aac-short-video.mp4")
     const source = await inspectMedia(file)

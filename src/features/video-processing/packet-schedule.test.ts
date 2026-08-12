@@ -99,7 +99,7 @@ describe("packet scheduling", () => {
   })
 
   it("rejects stale plans and observes cancellation", () => {
-    expect(() => assertPlanMatchesSource(plan(2, 2), 1.01)).toThrowError(
+    expect(() => assertPlanMatchesSource(plan(2, 2), 1.1)).toThrowError(
       expect.objectContaining({ code: "plan-duration-mismatch" }),
     )
     const controller = new AbortController()

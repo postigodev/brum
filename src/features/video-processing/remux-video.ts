@@ -7,7 +7,7 @@ import {
   Output,
 } from "mediabunny"
 
-import type { ExtensionPlan } from "#/features/video-selection/extension-plan"
+import { createExtensionPlan, type ExtensionPlan } from "#/features/video-selection/extension-plan"
 
 import { RemuxError, throwIfAborted, toRemuxError } from "./errors"
 import { inspectMedia } from "./inspect-media"
@@ -39,10 +39,17 @@ export async function remuxVideo(
   try {
     throwIfAborted(signal)
     assertInputSize(file.size)
-    assertEstimatedOutputSize(file.size, plan.totalPlays)
-
     const source = await inspectMedia(file, signal)
     assertPlanMatchesSource(plan, source.duration)
+    const reconciledPlanResult = createExtensionPlan(source.duration, plan.target)
+    if (!reconciledPlanResult.ok) {
+      throw new RemuxError(
+        "plan-duration-mismatch",
+        "The inspected video duration cannot use the selected target.",
+      )
+    }
+    const reconciledPlan = reconciledPlanResult.plan
+    assertEstimatedOutputSize(file.size, reconciledPlan.totalPlays)
     if (source.audio?.timeline.kind === "unsupported") {
       throw new RemuxError("unsupported-audio-timeline", source.audio.timeline.reason)
     }
@@ -50,17 +57,17 @@ export async function remuxVideo(
     const videoLedger = scheduleTrackPackets(
       "video",
       source.video.packets,
-      plan,
+      reconciledPlan,
       signal,
       source.video.duration,
     )
     const audioLedger =
       source.audio && audioMode === "packet-copy"
-        ? scheduleTrackPackets("audio", source.audio.packets, plan, signal)
+        ? scheduleTrackPackets("audio", source.audio.packets, reconciledPlan, signal)
         : null
 
     if (source.audio && audioMode === "reencode") {
-      preparedAudio = await prepareReencodedAudio(file, source.audio, plan, signal)
+      preparedAudio = await prepareReencodedAudio(file, source.audio, reconciledPlan, signal)
     }
 
     const target = new BufferTarget()
@@ -127,14 +134,14 @@ export async function remuxVideo(
     throwIfAborted(signal)
     const inspectedOutput = await inspectMedia(blob, signal)
     if (audioMode === "reencode") {
-      await verifyDecodedAudio(blob, plan.outputDuration, signal)
+      await verifyDecodedAudio(blob, reconciledPlan.outputDuration, signal)
     }
     const verification = verifyRemux(
       source,
       inspectedOutput,
       videoLedger,
       audioLedger,
-      plan.outputDuration,
+      reconciledPlan.outputDuration,
       audioMode,
     )
 
