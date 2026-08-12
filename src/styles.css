@@ -171,12 +171,15 @@
     min-height: 48px;
     align-items: center;
     justify-content: center;
+    border: 0;
     border-radius: var(--radius-ios-grouped);
     background: var(--color-ios-blue);
     color: var(--color-ios-surface);
     font-size: 1.0625rem;
     font-weight: 600;
+    font-family: inherit;
     text-decoration: none;
+    cursor: pointer;
     transition:
       background-color 150ms ease,
       transform 150ms ease;
@@ -188,6 +191,27 @@
 
   .ios-primary-action:active {
     transform: scale(0.99);
+  }
+
+  .ios-secondary-action {
+    display: flex;
+    width: 100%;
+    min-height: 48px;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: var(--radius-ios-grouped);
+    background: var(--color-ios-grouped);
+    padding: 0 16px;
+    color: var(--color-ios-blue);
+    font: inherit;
+    font-size: 1.0625rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .ios-secondary-action:hover {
+    background: var(--color-ios-boundary);
   }
 
   .ios-inline-status {
@@ -468,6 +492,36 @@
     color: var(--color-ios-secondary);
     font-size: 0.875rem;
     line-height: 1.4;
+  }
+
+  .ios-processing {
+    margin-top: 24px;
+  }
+
+  .ios-processing-panel {
+    display: grid;
+    gap: 16px;
+    padding: 16px;
+  }
+
+  .ios-processing-title {
+    margin: 0;
+    color: var(--color-ios-label);
+    font-size: 1.0625rem;
+    font-weight: 600;
+    letter-spacing: -0.015em;
+  }
+
+  .ios-processing-copy {
+    margin: 4px 0 0;
+    color: var(--color-ios-secondary);
+    font-size: 0.875rem;
+    line-height: 1.4;
+  }
+
+  .ios-processing-actions {
+    display: grid;
+    gap: 8px;
   }
 
   .ios-flow {

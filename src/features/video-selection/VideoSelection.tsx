@@ -1,4 +1,7 @@
 import { useEffect, useRef, useState } from "react"
+
+import { RemuxError, type RemuxResult, remuxVideo } from "#/features/video-processing"
+
 import {
   createExtensionPlan,
   DURATION_TARGETS,
@@ -6,6 +9,7 @@ import {
   LOOP_TARGETS,
   type TargetMode,
 } from "./extension-plan"
+import { outputFilename, processingErrorMessage } from "./processing-ui"
 
 type MetadataState =
   | { status: "loading" }
@@ -35,10 +39,15 @@ function formatDuration(seconds: number) {
 
 export function VideoSelection() {
   const inputRef = useRef<HTMLInputElement>(null)
+  const abortRef = useRef<AbortController | null>(null)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [result, setResult] = useState<RemuxResult | null>(null)
+  const [resultUrl, setResultUrl] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [status, setStatus] = useState("No video selected.")
+  const [processing, setProcessing] = useState(false)
+  const [shareAvailable, setShareAvailable] = useState(false)
   const [targetMode, setTargetMode] = useState<TargetMode>("duration")
   const [targetValue, setTargetValue] = useState<number | null>(null)
   const [metadata, setMetadata] = useState<MetadataState>({ status: "loading" })
@@ -54,6 +63,29 @@ export function VideoSelection() {
 
     return () => URL.revokeObjectURL(objectUrl)
   }, [selectedFile])
+
+  useEffect(() => {
+    if (!result) {
+      setResultUrl(null)
+      return
+    }
+
+    const objectUrl = URL.createObjectURL(result.blob)
+    setResultUrl(objectUrl)
+    return () => URL.revokeObjectURL(objectUrl)
+  }, [result])
+
+  useEffect(() => {
+    setShareAvailable(typeof navigator.share === "function")
+    return () => abortRef.current?.abort()
+  }, [])
+
+  function resetProcessing() {
+    abortRef.current?.abort()
+    abortRef.current = null
+    setProcessing(false)
+    setResult(null)
+  }
 
   function openPicker() {
     const input = inputRef.current
@@ -73,6 +105,8 @@ export function VideoSelection() {
       return
     }
 
+    resetProcessing()
+
     if (file.type && !file.type.startsWith("video/")) {
       setSelectedFile(null)
       resetTarget()
@@ -90,6 +124,7 @@ export function VideoSelection() {
   }
 
   function removeSelection() {
+    resetProcessing()
     setSelectedFile(null)
     resetTarget()
     setMetadata({ status: "loading" })
@@ -107,12 +142,14 @@ export function VideoSelection() {
   }
 
   function changeTargetMode(mode: TargetMode) {
+    resetProcessing()
     setTargetMode(mode)
     setTargetValue(null)
     setStatus(`${mode === "duration" ? "Duration" : "Loops"} mode selected. Choose a target.`)
   }
 
   function selectTarget(value: number) {
+    resetProcessing()
     setTargetValue(value)
     setStatus(
       targetMode === "duration"
@@ -159,6 +196,68 @@ export function VideoSelection() {
       ? createExtensionPlan(sourceDuration, { mode: targetMode, value: targetValue })
       : null
   const plan = planResult?.ok ? planResult.plan : null
+  const resultFilename =
+    selectedFile && plan ? outputFilename(selectedFile.name, plan.target) : null
+
+  async function extendVideo() {
+    if (!selectedFile || !plan || processing) return
+
+    const controller = new AbortController()
+    abortRef.current = controller
+    setProcessing(true)
+    setResult(null)
+    setError(null)
+    setStatus("Extending the video locally on this device.")
+
+    try {
+      const nextResult = await remuxVideo(selectedFile, plan, { signal: controller.signal })
+      if (abortRef.current !== controller) return
+      setResult(nextResult)
+      setStatus(`Video ready. ${formatDuration(nextResult.duration)} created locally.`)
+    } catch (caught) {
+      if (abortRef.current !== controller) return
+      if (caught instanceof RemuxError) {
+        if (caught.code === "canceled") {
+          setStatus("Extension canceled. The original video is unchanged.")
+        } else {
+          setError(processingErrorMessage(caught.code))
+          setStatus(`Extension failed: ${caught.code}.`)
+        }
+      } else {
+        setError("Brumaire could not extend this video. Try another MP4.")
+        setStatus("Extension failed.")
+      }
+    } finally {
+      if (abortRef.current === controller) {
+        abortRef.current = null
+        setProcessing(false)
+      }
+    }
+  }
+
+  function cancelProcessing() {
+    abortRef.current?.abort()
+    setStatus("Canceling the extension…")
+  }
+
+  async function shareResult() {
+    if (!result || !resultFilename || !navigator.share) return
+
+    const outputFile = new File([result.blob], resultFilename, { type: "video/mp4" })
+    const shareData: ShareData = { files: [outputFile], title: "Brumaire video" }
+    if (navigator.canShare && !navigator.canShare(shareData)) {
+      setError("This browser cannot share the finished file. Save it instead.")
+      return
+    }
+
+    try {
+      await navigator.share(shareData)
+      setStatus("Share sheet opened for the finished video.")
+    } catch (caught) {
+      if (caught instanceof DOMException && caught.name === "AbortError") return
+      setError("The finished video could not be shared. Save it instead.")
+    }
+  }
 
   function isTargetDisabled(value: number) {
     if (sourceDuration === null) {
@@ -178,11 +277,11 @@ export function VideoSelection() {
     }
 
     if (!plan) {
-      return "Choose a target. Extension is not available yet."
+      return "Choose a target to prepare the extension."
     }
 
     if (plan.target.mode === "loops") {
-      return `${plan.totalPlays} total plays · ${formatDuration(plan.outputDuration)} output. Extension is not available yet.`
+      return `${plan.totalPlays} total plays · ${formatDuration(plan.outputDuration)} output.`
     }
 
     const trimCopy =
@@ -190,7 +289,7 @@ export function VideoSelection() {
         ? "complete plays only"
         : `final play trimmed to ${formatDuration(plan.finalPartialDuration)}`
 
-    return `${formatDuration(plan.outputDuration)} exact · ${plan.totalPlays} total plays · ${trimCopy}. Extension is not available yet.`
+    return `${formatDuration(plan.outputDuration)} exact · ${plan.totalPlays} total plays · ${trimCopy}.`
   })()
 
   return (
@@ -200,7 +299,7 @@ export function VideoSelection() {
           ref={inputRef}
           className="ios-visually-hidden"
           type="file"
-          accept="video/*"
+          accept="video/mp4,.mp4"
           onChange={handleSelection}
           tabIndex={-1}
         />
@@ -208,18 +307,22 @@ export function VideoSelection() {
         {selectedFile ? (
           <>
             <div className="ios-video-preview">
-              {previewUrl ? (
+              {resultUrl || previewUrl ? (
                 // biome-ignore lint/a11y/useMediaCaption: User-selected local videos do not have an associated captions file.
                 <video
-                  key={previewUrl}
+                  key={resultUrl ?? previewUrl}
                   className="ios-video-element"
-                  src={previewUrl}
+                  src={resultUrl ?? previewUrl ?? undefined}
                   controls
                   playsInline
                   preload="metadata"
-                  aria-label={`Preview of ${selectedFile.name}`}
-                  onLoadedMetadata={handleLoadedMetadata}
-                  onError={handleMetadataError}
+                  aria-label={
+                    result
+                      ? `Preview of finished ${resultFilename}`
+                      : `Preview of ${selectedFile.name}`
+                  }
+                  onLoadedMetadata={result ? undefined : handleLoadedMetadata}
+                  onError={result ? undefined : handleMetadataError}
                 />
               ) : (
                 <p className="ios-selection-status">Preparing preview…</p>
@@ -229,12 +332,15 @@ export function VideoSelection() {
             <div className="ios-selected-file">
               <div className="ios-selected-file-copy">
                 <h2 id="selection-title" className="ios-selection-title">
-                  {selectedFile.name}
+                  {result ? resultFilename : selectedFile.name}
                 </h2>
                 <p className="ios-selection-status">
-                  {formatFileSize(selectedFile.size)}
-                  {metadata.status === "ready" ? ` · ${formatDuration(metadata.duration)}` : ""}
-                  {" · Local file"}
+                  {result ? formatFileSize(result.byteSize) : formatFileSize(selectedFile.size)}
+                  {result
+                    ? ` · ${formatDuration(result.duration)} · Ready`
+                    : metadata.status === "ready"
+                      ? ` · ${formatDuration(metadata.duration)} · Local file`
+                      : " · Local file"}
                 </p>
               </div>
               <div className="ios-selection-actions">
@@ -305,6 +411,7 @@ export function VideoSelection() {
                     name="target-mode"
                     value={mode}
                     checked={targetMode === mode}
+                    disabled={processing}
                     onChange={() => changeTargetMode(mode)}
                   />
                   <span>{mode === "duration" ? "Duration" : "Loops"}</span>
@@ -331,7 +438,7 @@ export function VideoSelection() {
                       name="target-value"
                       value={value}
                       checked={targetValue === value}
-                      disabled={disabled}
+                      disabled={disabled || processing}
                       onChange={() => selectTarget(value)}
                     />
                     <span>
@@ -353,6 +460,54 @@ export function VideoSelection() {
           </fieldset>
 
           <p className="ios-target-note">{targetDescription}</p>
+
+          {plan ? (
+            <section className="ios-processing" aria-labelledby="processing-title">
+              <div className="ios-group ios-processing-panel" aria-busy={processing}>
+                <div>
+                  <h2 id="processing-title" className="ios-processing-title">
+                    {result ? "Video ready" : processing ? "Extending locally…" : "Ready to extend"}
+                  </h2>
+                  <p className="ios-processing-copy">
+                    {result
+                      ? "The finished MP4 is ready to preview, save, or share."
+                      : processing
+                        ? "Keep Brumaire open while it builds and verifies the new file."
+                        : "Processing stays in this browser. Your video is not uploaded."}
+                  </p>
+                </div>
+
+                {result && resultUrl && resultFilename ? (
+                  <div className="ios-processing-actions">
+                    <a className="ios-primary-action" href={resultUrl} download={resultFilename}>
+                      Save video
+                    </a>
+                    {shareAvailable ? (
+                      <button
+                        type="button"
+                        className="ios-secondary-action"
+                        onClick={() => void shareResult()}
+                      >
+                        Share video
+                      </button>
+                    ) : null}
+                  </div>
+                ) : processing ? (
+                  <button type="button" className="ios-secondary-action" onClick={cancelProcessing}>
+                    Cancel
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="ios-primary-action"
+                    onClick={() => void extendVideo()}
+                  >
+                    Extend video
+                  </button>
+                )}
+              </div>
+            </section>
+          ) : null}
         </section>
       ) : null}
     </>

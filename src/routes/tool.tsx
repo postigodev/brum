@@ -12,8 +12,7 @@ function ToolPage() {
           Start with a short loop.
         </h1>
         <p className="ios-body-copy">
-          Choose a short video from this device. Processing and export have not been implemented
-          yet.
+          Choose a short video, extend it locally, then save or share the finished MP4.
         </p>
       </section>
 
@@ -21,7 +20,7 @@ function ToolPage() {
 
       <section aria-labelledby="flow-title" className="ios-flow">
         <h2 id="flow-title" className="ios-section-heading">
-          Planned flow
+          Local workflow
         </h2>
         <div className="ios-group">
           <div className="ios-group-row">Select</div>
