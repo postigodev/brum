@@ -28,8 +28,12 @@ pnpm dev
 
 The development server runs at `http://localhost:3000`.
 
-During development, `/__spike/remux` exposes the local H.264/AAC remux harness. The route is
-unlinked, returns not found in production, and has not yet been validated on a physical iPhone.
+During development, `/__spike/remux` exposes the local H.264/AAC remux harness. It copies
+aligned H.264 and AAC packets, while ordinary AAC encoder priming uses a local audio-only
+decode/re-encode fallback. Video packets are never transcoded. The fallback requires browser AAC
+WebCodecs support (the current compatibility target is Safari/iOS 26 or newer) and reports an
+explicit capability error when unavailable. The route is unlinked, returns not found in
+production, and has not yet been validated on a physical iPhone.
 
 ## Validation
 

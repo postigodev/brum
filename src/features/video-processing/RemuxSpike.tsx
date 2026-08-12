@@ -19,6 +19,14 @@ function formatDuration(seconds: number) {
   return `${seconds.toFixed(3)} s`
 }
 
+function audioStrategy(inspection: MediaInspection) {
+  const timeline = inspection.audio?.timeline
+  if (!timeline) return "No audio"
+  if (timeline.kind === "packet-copy") return "Audio will be copied"
+  if (timeline.kind === "reencode") return "Audio will be re-encoded"
+  return timeline.reason
+}
+
 export function RemuxSpike() {
   const [file, setFile] = useState<File | null>(null)
   const [inspection, setInspection] = useState<MediaInspection | null>(null)
@@ -87,6 +95,7 @@ export function RemuxSpike() {
   }
 
   const targets = mode === "duration" ? DURATION_TARGETS : LOOP_TARGETS
+  const unsupportedAudio = inspection?.audio?.timeline.kind === "unsupported"
 
   return (
     <main className="ios-main spike-main">
@@ -134,6 +143,10 @@ export function RemuxSpike() {
                   : "None"}
               </dd>
             </div>
+            <div>
+              <dt>Strategy</dt>
+              <dd>{audioStrategy(inspection)}</dd>
+            </div>
           </dl>
         )}
       </section>
@@ -177,7 +190,7 @@ export function RemuxSpike() {
           <button
             type="button"
             className="spike-run"
-            disabled={!inspection || running}
+            disabled={!inspection || unsupportedAudio || running}
             onClick={() => void run()}
           >
             {running ? "Running…" : "Run remux"}
@@ -210,6 +223,12 @@ export function RemuxSpike() {
           <p className="spike-detail">
             {formatDuration(result.duration)} · {formatBytes(result.byteSize)}
             {elapsedMs === null ? "" : ` · ${(elapsedMs / 1000).toFixed(2)} s elapsed`}
+          </p>
+          <p className="spike-detail">
+            Audio: {result.audioMode}
+            {result.audioBitrate === null
+              ? ""
+              : ` · ${Math.round(result.audioBitrate / 1000)} kbps`}
           </p>
           <pre className="spike-report">{JSON.stringify(result.verification, null, 2)}</pre>
           <a

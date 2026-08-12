@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@mediabunny/aac-encoder':
+        specifier: ^1.53.0
+        version: 1.53.0(mediabunny@1.53.0)
       '@tailwindcss/vite':
         specifier: ^4.1.18
         version: 4.3.3(vite@8.2.1(@types/node@22.20.1)(jiti@2.7.0))
@@ -199,6 +202,11 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
+
+  '@mediabunny/aac-encoder@1.53.0':
+    resolution: {integrity: sha512-y32WtF8RwCT3fdBAV9NaW2FqeZmKVZqt7uP9MxHQWLafleT4JRHdZ1qa3AbWROoy55a4STlT3M44YbsVzhe45w==}
+    peerDependencies:
+      mediabunny: ^1.0.0
 
   '@oozcitak/dom@2.0.2':
     resolution: {integrity: sha512-GjpKhkSYC3Mj4+lfwEyI1dqnsKTgwGy48ytZEhm4A/xnH/8z9M3ZVXKr/YGQi3uCLs1AEBS+x5T2JPiueEDW8w==}
@@ -1399,6 +1407,10 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
+
+  '@mediabunny/aac-encoder@1.53.0(mediabunny@1.53.0)':
+    dependencies:
+      mediabunny: 1.53.0
 
   '@oozcitak/dom@2.0.2':
     dependencies:

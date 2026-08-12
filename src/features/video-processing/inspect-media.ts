@@ -8,6 +8,7 @@ import {
   MP4,
 } from "mediabunny"
 
+import { classifyAudioTimeline } from "./audio-timeline"
 import { RemuxError, throwIfAborted, toRemuxError } from "./errors"
 import { TIMELINE_TOLERANCE_SECONDS } from "./packet-schedule"
 import type { AudioTrackSummary, MediaInspection, PacketRecord, VideoTrackSummary } from "./types"
@@ -82,7 +83,12 @@ async function inspectVideo(track: InputVideoTrack, duration: number, signal?: A
   } satisfies VideoTrackSummary
 }
 
-async function inspectAudio(track: InputAudioTrack, duration: number, signal?: AbortSignal) {
+async function inspectAudio(
+  track: InputAudioTrack,
+  duration: number,
+  sourceDuration: number,
+  signal?: AbortSignal,
+) {
   const codec = await track.getCodec()
   if (codec !== "aac") {
     throw new RemuxError("unsupported-audio-codec", "Only AAC audio is supported.")
@@ -94,6 +100,7 @@ async function inspectAudio(track: InputAudioTrack, duration: number, signal?: A
     throw new RemuxError("unsupported-audio-codec", "The AAC configuration is incomplete.")
   }
 
+  const packets = await readPackets(track, signal)
   return {
     kind: "audio",
     codec,
@@ -102,7 +109,8 @@ async function inspectAudio(track: InputAudioTrack, duration: number, signal?: A
     numberOfChannels: await track.getNumberOfChannels(),
     decoderConfig,
     duration,
-    packets: await readPackets(track, signal),
+    packets,
+    timeline: classifyAudioTimeline(packets, sourceDuration),
   } satisfies AudioTrackSummary
 }
 
@@ -167,26 +175,27 @@ export async function inspectMedia(blob: Blob, signal?: AbortSignal): Promise<Me
       throw new RemuxError("invalid-duration", "The MP4 duration is invalid.")
     }
 
-    for (const track of tracks) {
-      const [firstTimestamp, trackDuration] = await Promise.all([
-        input.getFirstTimestamp([track]),
-        track.computeDuration(),
-      ])
-      assertTrackTimeline(firstTimestamp, trackDuration, duration)
-    }
+    const videoTrack = videoTracks[0] as InputVideoTrack
+    const [videoFirstTimestamp, videoDuration] = await Promise.all([
+      input.getFirstTimestamp([videoTrack]),
+      videoTrack.computeDuration(),
+    ])
+    assertTrackTimeline(videoFirstTimestamp, videoDuration, duration)
 
     throwIfAborted(signal)
-    const video = await inspectVideo(videoTracks[0] as InputVideoTrack, duration, signal)
-    const audio = audioTracks[0]
-      ? await inspectAudio(audioTracks[0] as InputAudioTrack, duration, signal)
+    const video = await inspectVideo(videoTrack, videoDuration, signal)
+    const audioTrack = audioTracks[0] as InputAudioTrack | undefined
+    const audioDuration = audioTrack ? await audioTrack.computeDuration() : null
+    const audio = audioTrack
+      ? await inspectAudio(audioTrack, audioDuration as number, duration, signal)
       : null
 
-    const sharedOrigin = Math.min(
-      video.packets[0]?.timestamp ?? 0,
-      audio?.packets[0]?.timestamp ?? 0,
-    )
+    const sharedOrigin =
+      audio?.timeline.kind === "packet-copy"
+        ? Math.min(video.packets[0]?.timestamp ?? 0, audio.packets[0]?.timestamp ?? 0)
+        : (video.packets[0]?.timestamp ?? 0)
     for (const packet of video.packets) packet.timestamp -= sharedOrigin
-    if (audio) {
+    if (audio?.timeline.kind === "packet-copy") {
       for (const packet of audio.packets) packet.timestamp -= sharedOrigin
     }
 

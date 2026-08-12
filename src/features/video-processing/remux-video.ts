@@ -9,12 +9,13 @@ import {
 
 import type { ExtensionPlan } from "#/features/video-selection/extension-plan"
 
-import { throwIfAborted, toRemuxError } from "./errors"
+import { RemuxError, throwIfAborted, toRemuxError } from "./errors"
 import { inspectMedia } from "./inspect-media"
 import { assertActualOutputSize, assertEstimatedOutputSize, assertInputSize } from "./limits"
 import { assertPlanMatchesSource, scheduleTrackPackets } from "./packet-schedule"
-import type { PacketLedgerEntry, PacketRecord, RemuxOptions, RemuxResult } from "./types"
-import { verifyRemux } from "./verify-remux"
+import { type PreparedReencodedAudio, prepareReencodedAudio } from "./reencode-audio"
+import type { AudioMode, PacketLedgerEntry, PacketRecord, RemuxOptions, RemuxResult } from "./types"
+import { verifyDecodedAudio, verifyRemux } from "./verify-remux"
 
 function packetFromEntry(
   entry: PacketLedgerEntry,
@@ -33,6 +34,7 @@ export async function remuxVideo(
 ): Promise<RemuxResult> {
   const { signal } = options
   let output: Output<Mp4OutputFormat, BufferTarget> | null = null
+  let preparedAudio: PreparedReencodedAudio | null = null
 
   try {
     throwIfAborted(signal)
@@ -41,44 +43,73 @@ export async function remuxVideo(
 
     const source = await inspectMedia(file, signal)
     assertPlanMatchesSource(plan, source.duration)
+    if (source.audio?.timeline.kind === "unsupported") {
+      throw new RemuxError("unsupported-audio-timeline", source.audio.timeline.reason)
+    }
+    const audioMode: AudioMode = source.audio?.timeline.kind ?? "none"
     const videoLedger = scheduleTrackPackets("video", source.video.packets, plan, signal)
-    const audioLedger = source.audio
-      ? scheduleTrackPackets("audio", source.audio.packets, plan, signal)
-      : null
+    const audioLedger =
+      source.audio && audioMode === "packet-copy"
+        ? scheduleTrackPackets("audio", source.audio.packets, plan, signal)
+        : null
+
+    if (source.audio && audioMode === "reencode") {
+      preparedAudio = await prepareReencodedAudio(file, source.audio, plan, signal)
+    }
 
     const target = new BufferTarget()
     output = new Output({ format: new Mp4OutputFormat({ fastStart: "in-memory" }), target })
     const videoSource = new EncodedVideoPacketSource("avc")
-    const audioSource = source.audio ? new EncodedAudioPacketSource("aac") : null
+    const copiedAudioSource = source.audio ? new EncodedAudioPacketSource("aac") : null
     output.addVideoTrack(videoSource, {
       decoderConfig: source.video.decoderConfig,
       rotation: source.video.rotation,
     })
-    if (audioSource && source.audio) {
-      output.addAudioTrack(audioSource, { decoderConfig: source.audio.decoderConfig })
+    if (copiedAudioSource && source.audio) {
+      output.addAudioTrack(
+        copiedAudioSource,
+        audioMode === "packet-copy" ? { decoderConfig: source.audio.decoderConfig } : undefined,
+      )
     }
     await output.start()
 
     let videoIndex = 0
     let audioIndex = 0
-    while (videoIndex < videoLedger.length || (audioLedger && audioIndex < audioLedger.length)) {
+    let reencodedAudioIndex = 0
+    while (
+      videoIndex < videoLedger.length ||
+      (audioLedger && audioIndex < audioLedger.length) ||
+      (preparedAudio && reencodedAudioIndex < preparedAudio.packets.length)
+    ) {
       throwIfAborted(signal)
       const videoEntry = videoLedger[videoIndex]
       const audioEntry = audioLedger?.[audioIndex]
-      if (videoEntry && (!audioEntry || videoEntry.timestamp <= audioEntry.timestamp)) {
+      const reencodedEntry = preparedAudio?.packets[reencodedAudioIndex]
+      const reencodedTimestamp = reencodedEntry?.packet.timestamp ?? Number.POSITIVE_INFINITY
+      const nextAudioTimestamp = Math.min(
+        audioEntry?.timestamp ?? Number.POSITIVE_INFINITY,
+        reencodedTimestamp,
+      )
+      if (videoEntry && videoEntry.timestamp <= nextAudioTimestamp) {
         await videoSource.add(
           packetFromEntry(videoEntry, source.video.packets, videoIndex),
           videoIndex === 0 ? { decoderConfig: source.video.decoderConfig } : undefined,
         )
         videoIndex += 1
-      } else if (audioEntry && audioSource && source.audio) {
-        await audioSource.add(
+      } else if (audioEntry && copiedAudioSource && source.audio) {
+        await copiedAudioSource.add(
           packetFromEntry(audioEntry, source.audio.packets, audioIndex),
           audioIndex === 0 ? { decoderConfig: source.audio.decoderConfig } : undefined,
         )
         audioIndex += 1
+      } else if (reencodedEntry && copiedAudioSource) {
+        await copiedAudioSource.add(reencodedEntry.packet, reencodedEntry.metadata)
+        reencodedAudioIndex += 1
       }
     }
+
+    videoSource.close()
+    copiedAudioSource?.close()
 
     throwIfAborted(signal)
     await output.finalize()
@@ -89,12 +120,16 @@ export async function remuxVideo(
     assertActualOutputSize(blob.size)
     throwIfAborted(signal)
     const inspectedOutput = await inspectMedia(blob, signal)
+    if (audioMode === "reencode") {
+      await verifyDecodedAudio(blob, plan.outputDuration, signal)
+    }
     const verification = verifyRemux(
       source,
       inspectedOutput,
       videoLedger,
       audioLedger,
       plan.outputDuration,
+      audioMode,
     )
 
     const { packets: _videoPackets, decoderConfig: _videoConfig, ...video } = inspectedOutput.video
@@ -109,6 +144,8 @@ export async function remuxVideo(
       byteSize: blob.size,
       video,
       audio,
+      audioMode,
+      audioBitrate: preparedAudio?.bitrate ?? null,
       verification,
     }
   } catch (error) {

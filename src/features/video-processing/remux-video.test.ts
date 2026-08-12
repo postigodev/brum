@@ -69,7 +69,27 @@ describe("local MP4 remux", () => {
 
     expect(result.duration).toBeCloseTo(source.duration * 2, 3)
     expect(result.audio).toMatchObject({ codec: "aac", sampleRate: 48_000, numberOfChannels: 1 })
+    expect(result.audioMode).toBe("packet-copy")
+    expect(result.audioBitrate).toBeNull()
     expect(result.verification.packetLedger).toBe(true)
+  })
+
+  it("classifies ordinary AAC encoder priming for audio-only re-encoding", async () => {
+    const inspection = await inspectMedia(await fixture("h264-aac-priming.mp4"))
+
+    expect(inspection.audio?.timeline).toMatchObject({
+      kind: "reencode",
+      firstTimestamp: -0.021333333333333333,
+    })
+  })
+
+  it("reports a capability error when AAC priming needs an unavailable decoder", async () => {
+    const file = await fixture("h264-aac-priming.mp4")
+    const source = await inspectMedia(file)
+
+    await expect(remuxVideo(file, loopPlan(source.duration))).rejects.toMatchObject({
+      code: "audio-decoder-unavailable",
+    })
   })
 
   it("rejects unsupported video codecs without transcoding", async () => {

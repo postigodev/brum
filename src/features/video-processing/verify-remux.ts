@@ -1,6 +1,9 @@
-import { RemuxError } from "./errors"
+import { AudioSampleSink, BlobSource, Input, MP4 } from "mediabunny"
+
+import { RemuxError, throwIfAborted } from "./errors"
 import { TIMELINE_TOLERANCE_SECONDS } from "./packet-schedule"
 import type {
+  AudioMode,
   AudioTrackSummary,
   MediaInspection,
   PacketLedgerEntry,
@@ -8,6 +11,8 @@ import type {
   RemuxVerification,
   VideoTrackSummary,
 } from "./types"
+
+const AAC_FRAME_SIZE = 1024
 
 function equalBytes(
   left: AllowSharedBufferSource | undefined,
@@ -69,14 +74,73 @@ function equalVideo(source: VideoTrackSummary, output: VideoTrackSummary) {
   )
 }
 
-function equalAudio(source: AudioTrackSummary | null, output: AudioTrackSummary | null) {
+function equalAudio(
+  source: AudioTrackSummary | null,
+  output: AudioTrackSummary | null,
+  audioMode: AudioMode,
+) {
   if (!source || !output) return source === output
-  return (
+  const propertiesMatch =
     source.codecString === output.codecString &&
     source.sampleRate === output.sampleRate &&
-    source.numberOfChannels === output.numberOfChannels &&
-    equalDecoderConfig(source.decoderConfig, output.decoderConfig)
+    source.numberOfChannels === output.numberOfChannels
+  return (
+    propertiesMatch &&
+    (audioMode === "reencode" || equalDecoderConfig(source.decoderConfig, output.decoderConfig))
   )
+}
+
+export async function verifyDecodedAudio(blob: Blob, targetDuration: number, signal?: AbortSignal) {
+  const input = new Input({ formats: [MP4], source: new BlobSource(blob) })
+
+  try {
+    const tracks = await input.getAudioTracks()
+    const track = tracks[0]
+    if (!track || tracks.length !== 1) {
+      throw new RemuxError("verification-failed", "The output AAC track is missing.")
+    }
+
+    const sampleRate = await track.getSampleRate()
+    const expectedFrames = Math.round(targetDuration * sampleRate)
+    let frameCursor: number | null = null
+    const sink = new AudioSampleSink(track)
+
+    for await (const sample of sink.samples()) {
+      try {
+        throwIfAborted(signal)
+        const startFrame = Math.round(sample.timestamp * sampleRate)
+        if (frameCursor === null) {
+          if (startFrame > 1 || startFrame < -AAC_FRAME_SIZE - 1) {
+            throw new RemuxError(
+              "verification-failed",
+              "The re-encoded AAC starts outside its priming allowance.",
+            )
+          }
+        } else if (Math.abs(startFrame - frameCursor) > 1) {
+          throw new RemuxError(
+            "verification-failed",
+            "The re-encoded AAC timeline is discontinuous.",
+          )
+        }
+        frameCursor = startFrame + sample.numberOfFrames
+      } finally {
+        sample.close()
+      }
+    }
+
+    if (
+      frameCursor === null ||
+      frameCursor < expectedFrames - 1 ||
+      frameCursor > expectedFrames + AAC_FRAME_SIZE
+    ) {
+      throw new RemuxError(
+        "verification-failed",
+        "The decoded AAC does not cover the requested duration within one codec frame.",
+      )
+    }
+  } finally {
+    input.dispose()
+  }
 }
 
 export function verifyRemux(
@@ -85,6 +149,7 @@ export function verifyRemux(
   videoLedger: readonly PacketLedgerEntry[],
   audioLedger: readonly PacketLedgerEntry[] | null,
   targetDuration: number,
+  audioMode: AudioMode = source.audio ? "packet-copy" : "none",
 ): RemuxVerification {
   const duration =
     Math.abs(output.duration - targetDuration) <= TIMELINE_TOLERANCE_SECONDS &&
@@ -94,12 +159,16 @@ export function verifyRemux(
   const codecs =
     source.video.codec === output.video.codec && source.audio?.codec === output.audio?.codec
   const videoGeometry = equalVideo(source.video, output.video)
-  const audioProperties = equalAudio(source.audio, output.audio)
+  const audioProperties = equalAudio(source.audio, output.audio, audioMode)
   const packetLedger =
     assertPacketLedger(output.video.packets, videoLedger) &&
-    (audioLedger === null
+    (audioMode === "none"
       ? output.audio === null
-      : output.audio !== null && assertPacketLedger(output.audio.packets, audioLedger))
+      : audioMode === "reencode"
+        ? output.audio?.timeline.kind !== "unsupported"
+        : output.audio !== null &&
+          audioLedger !== null &&
+          assertPacketLedger(output.audio.packets, audioLedger))
 
   if (!duration || !codecs || !videoGeometry || !audioProperties || !packetLedger) {
     throw new RemuxError("verification-failed", "The remuxed MP4 did not preserve its contract.")

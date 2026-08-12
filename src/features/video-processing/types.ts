@@ -1,6 +1,15 @@
 import type { PacketType, Rotation } from "mediabunny"
 
 export type TrackKind = "video" | "audio"
+export type AudioMode = "none" | "packet-copy" | "reencode"
+export type AudioTimelineKind = AudioMode | "unsupported"
+
+export type AudioTimelineAnalysis = {
+  kind: AudioTimelineKind
+  reason: string
+  firstTimestamp: number | null
+  endTimestamp: number | null
+}
 
 export type PacketRecord = {
   sourceIndex: number
@@ -47,6 +56,7 @@ export type AudioTrackSummary = {
   decoderConfig: AudioDecoderConfig
   duration: number
   packets: PacketRecord[]
+  timeline: AudioTimelineAnalysis
 }
 
 export type MediaInspection = {
@@ -69,6 +79,8 @@ export type RemuxResult = {
   byteSize: number
   video: Omit<VideoTrackSummary, "packets" | "decoderConfig">
   audio: Omit<AudioTrackSummary, "packets" | "decoderConfig"> | null
+  audioMode: AudioMode
+  audioBitrate: number | null
   verification: RemuxVerification
 }
 
