@@ -126,6 +126,27 @@ function assertTrackTimeline(firstTimestamp: number, duration: number, container
   }
 }
 
+export const MAX_VIDEO_TAIL_GAP_SECONDS = 0.25
+
+function assertVideoTimeline(
+  firstTimestamp: number,
+  videoDuration: number,
+  containerDuration: number,
+  hasAudio: boolean,
+) {
+  const tailGap = containerDuration - videoDuration
+  if (
+    Math.abs(firstTimestamp) > TIMELINE_TOLERANCE_SECONDS ||
+    tailGap < -TIMELINE_TOLERANCE_SECONDS ||
+    tailGap > (hasAudio ? MAX_VIDEO_TAIL_GAP_SECONDS : TIMELINE_TOLERANCE_SECONDS)
+  ) {
+    throw new RemuxError(
+      "unsupported-timeline",
+      "The video track must start at zero and cover the supported source timeline.",
+    )
+  }
+}
+
 export async function inspectMedia(blob: Blob, signal?: AbortSignal): Promise<MediaInspection> {
   throwIfAborted(signal)
   const input = new Input({ formats: [MP4], source: new BlobSource(blob) })
@@ -180,12 +201,15 @@ export async function inspectMedia(blob: Blob, signal?: AbortSignal): Promise<Me
       input.getFirstTimestamp([videoTrack]),
       videoTrack.computeDuration(),
     ])
-    assertTrackTimeline(videoFirstTimestamp, videoDuration, duration)
+    assertVideoTimeline(videoFirstTimestamp, videoDuration, duration, audioTracks.length === 1)
 
     throwIfAborted(signal)
     const video = await inspectVideo(videoTrack, videoDuration, signal)
     const audioTrack = audioTracks[0] as InputAudioTrack | undefined
     const audioDuration = audioTrack ? await audioTrack.computeDuration() : null
+    if (audioDuration !== null) {
+      assertTrackTimeline(0, audioDuration, duration)
+    }
     const audio = audioTrack
       ? await inspectAudio(audioTrack, audioDuration as number, duration, signal)
       : null

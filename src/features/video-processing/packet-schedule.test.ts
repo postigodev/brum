@@ -70,6 +70,34 @@ describe("packet scheduling", () => {
     expect(ledger.at(-1)?.duration).toBeCloseTo(0.1, 10)
   })
 
+  it("models the muxer's final-frame hold before another video cycle", () => {
+    const shortVideoPackets = packets.map((packet, index) =>
+      index === 2 ? { ...packet, duration: 0.04 } : packet,
+    )
+    const ledger = scheduleTrackPackets("video", shortVideoPackets, plan(2, 2), undefined, 0.84)
+
+    const heldPackets = ledger.filter((entry) => entry.sourceIndex === 2)
+    expect(heldPackets).toMatchObject([
+      { repetition: 0, timestamp: 0.8 },
+      { repetition: 1, timestamp: 1.8 },
+    ])
+    expect(heldPackets[0]?.duration).toBeCloseTo(0.2, 10)
+    expect(heldPackets[1]?.duration).toBeCloseTo(0.04, 10)
+    expect(heldPackets[0]?.timestamp + (heldPackets[0]?.duration ?? 0)).toBeCloseTo(1, 10)
+    expect(ledger[3]?.timestamp).toBe(1)
+  })
+
+  it("ends exactly when a duration target falls inside the held tail", () => {
+    const shortVideoPackets = packets.map((packet, index) =>
+      index === 2 ? { ...packet, duration: 0.04 } : packet,
+    )
+    const ledger = scheduleTrackPackets("video", shortVideoPackets, plan(1.9, 2), undefined, 0.84)
+
+    expect(ledger.at(-1)).toMatchObject({ sourceIndex: 2, repetition: 1, timestamp: 1.8 })
+    expect(ledger.at(-1)?.duration).toBeCloseTo(0.04, 10)
+    expect((ledger.at(-1)?.timestamp ?? 0) + (ledger.at(-1)?.duration ?? 0)).toBeCloseTo(1.84, 10)
+  })
+
   it("rejects stale plans and observes cancellation", () => {
     expect(() => assertPlanMatchesSource(plan(2, 2), 1.01)).toThrowError(
       expect.objectContaining({ code: "plan-duration-mismatch" }),

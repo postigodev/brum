@@ -74,6 +74,29 @@ describe("local MP4 remux", () => {
     expect(result.verification.packetLedger).toBe(true)
   })
 
+  it("holds a short video track through full AAC cycle boundaries", async () => {
+    const file = await fixture("h264-aac-short-video.mp4")
+    const source = await inspectMedia(file)
+
+    expect(source.duration).toBeCloseTo(1, 2)
+    expect(source.video.duration).toBeCloseTo(0.84, 3)
+    expect(source.audio?.duration).toBeCloseTo(source.duration, 3)
+
+    const result = await remuxVideo(file, loopPlan(source.duration))
+    const output = await inspectMedia(result.blob)
+    const sourceHashes = source.video.packets.map((packet) => packet.hash)
+
+    expect(result.duration).toBeCloseTo(source.duration * 2, 3)
+    expect(result.video.duration).toBeCloseTo(source.duration + source.video.duration, 3)
+    expect(result.audio?.duration).toBeCloseTo(source.duration * 2, 3)
+    expect(result.audioMode).toBe("packet-copy")
+    expect(output.video.packets.map((packet) => packet.hash)).toEqual([
+      ...sourceHashes,
+      ...sourceHashes,
+    ])
+    expect(result.verification.packetLedger).toBe(true)
+  })
+
   it("classifies ordinary AAC encoder priming for audio-only re-encoding", async () => {
     const inspection = await inspectMedia(await fixture("h264-aac-priming.mp4"))
 

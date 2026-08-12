@@ -22,8 +22,19 @@ export function scheduleTrackPackets(
   packets: readonly PacketRecord[],
   plan: ExtensionPlan,
   signal?: AbortSignal,
+  sourceTrackDuration = plan.sourceDuration,
 ) {
   const ledger: PacketLedgerEntry[] = []
+  const hasVideoTailGap =
+    track === "video" && plan.sourceDuration - sourceTrackDuration > TIMELINE_TOLERANCE_SECONDS
+  const presentationLatestPacket = hasVideoTailGap
+    ? packets.reduce<PacketRecord | null>((latest, packet) => {
+        if (!latest) return packet
+        return packet.timestamp + packet.duration > latest.timestamp + latest.duration
+          ? packet
+          : latest
+      }, null)
+    : null
 
   for (let repetition = 0; repetition < plan.totalPlays; repetition += 1) {
     throwIfAborted(signal)
@@ -33,7 +44,13 @@ export function scheduleTrackPackets(
       const timestamp = packet.timestamp + offset
       if (timestamp >= plan.outputDuration - Number.EPSILON) continue
 
-      const duration = Math.min(packet.duration, plan.outputDuration - timestamp)
+      // When another GOP follows, the MP4 muxer derives the final presentation sample's
+      // duration from the next keyframe. Model that metadata adjustment in the ledger.
+      const packetDuration =
+        packet === presentationLatestPacket && repetition < plan.totalPlays - 1
+          ? plan.sourceDuration - packet.timestamp
+          : packet.duration
+      const duration = Math.min(packetDuration, plan.outputDuration - timestamp)
       if (duration <= 0) continue
 
       ledger.push({

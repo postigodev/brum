@@ -47,7 +47,13 @@ export async function remuxVideo(
       throw new RemuxError("unsupported-audio-timeline", source.audio.timeline.reason)
     }
     const audioMode: AudioMode = source.audio?.timeline.kind ?? "none"
-    const videoLedger = scheduleTrackPackets("video", source.video.packets, plan, signal)
+    const videoLedger = scheduleTrackPackets(
+      "video",
+      source.video.packets,
+      plan,
+      signal,
+      source.video.duration,
+    )
     const audioLedger =
       source.audio && audioMode === "packet-copy"
         ? scheduleTrackPackets("audio", source.audio.packets, plan, signal)

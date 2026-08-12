@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Process H.264/AAC MP4s whose video ends up to 250 ms before full-length AAC audio by holding the last video frame through each repetition boundary.
+**Goal:** Process H.264/AAC MP4s whose video ends up to 250 ms before full-length AAC audio by preserving the source tail gap through each repetition boundary.
 
-**Architecture:** Inspection accepts only a bounded video-tail gap while retaining strict zero-origin and audio-duration checks. A focused packet scheduler receives the authoritative cycle duration and extends the presentation duration of the packet with the latest presentation end; the existing ledger then verifies the intentional metadata change alongside unchanged packet hashes.
+**Architecture:** Inspection accepts only a bounded video-tail gap while retaining strict zero-origin and audio-duration checks. Packet scheduling offsets repetitions by the authoritative container duration and models the MP4 muxer's derived final-sample duration before each following keyframe. Verification requires exact container/AAC output and derives the expected video end from the final scheduled packet.
 
 **Tech Stack:** TypeScript, Mediabunny, Vitest, React integration through the existing `/tool` flow.
 
@@ -28,11 +28,11 @@
 
 **Interfaces:**
 - Consumes: `MediaInspection.duration`, `VideoTrackSummary.duration`, `AudioTrackSummary.duration`, and `ExtensionPlan`.
-- Produces: `MAX_VIDEO_TAIL_GAP_SECONDS = 0.25`; `scheduleTrackPackets(track, packets, plan, signal?, sourceTrackDuration?)`, where `sourceTrackDuration` enables video tail holding and defaults to `plan.sourceDuration`.
+- Produces: `MAX_VIDEO_TAIL_GAP_SECONDS = 0.25`; unchanged `scheduleTrackPackets(track, packets, plan, signal?)` behavior that preserves video tail gaps.
 
 - [ ] **Step 1: Add failing scheduler tests**
 
-Add cases using packets that end at `0.84` for a `1` second cycle. Assert the presentation-latest packet ends at `1`, `2`, etc. for complete repetitions and that a final output cutoff at `1.9` shortens that held packet to end exactly at `1.9`.
+Add cases using packets that end at `0.84` for a `1` second cycle. Assert the next cycle starts at `1`, preserving the 160 ms gap, and that a final output cutoff at `1.9` leaves the final video packet ending at `1.84` while full-length audio remains authoritative.
 
 - [ ] **Step 2: Run the focused test and confirm failure**
 
@@ -42,7 +42,7 @@ Expected: the new assertions fail because the scheduler currently leaves a gap a
 
 - [ ] **Step 3: Implement minimal timeline support**
 
-In inspection, validate video origin separately, require exact video duration for silent files, and for files with audio accept only `containerDuration - videoDuration` in `[0, 0.25]` while requiring audio duration to match the container within `0.001`. In scheduling, identify the packet with the greatest `timestamp + duration`; for video only, extend that ledger entry through `plan.sourceDuration`, bounded by `plan.outputDuration`. Do not change source bytes or packet timestamps.
+In inspection, validate video origin separately, require exact video duration for silent files, and for files with audio accept only `containerDuration - videoDuration` in `[0, 0.25]` while requiring audio duration to match the container within `0.001`. Keep scheduling unchanged so source bytes, packet timestamps, durations, and the bounded gap are preserved.
 
 - [ ] **Step 4: Run the focused scheduler test**
 
@@ -74,11 +74,11 @@ Inspect the fixture and assert a positive video tail gap below `0.25`. Remux two
 
 Run: `pnpm test -- src/features/video-processing/remux-video.test.ts`
 
-Expected: FAIL until `remuxVideo` supplies `source.video.duration` to video scheduling.
+Expected: FAIL until verification accepts the explicitly scheduled short video track duration.
 
 - [ ] **Step 4: Wire the video track duration into scheduling**
 
-Call `scheduleTrackPackets("video", source.video.packets, plan, signal, source.video.duration)`. Keep audio scheduling unchanged so AAC continues to cover the authoritative cycle naturally.
+Compute expected output video duration from the maximum `timestamp + duration` in the video ledger. Require the container and AAC track to match `plan.outputDuration`, while the video track matches that ledger-derived end.
 
 - [ ] **Step 5: Run focused tests**
 

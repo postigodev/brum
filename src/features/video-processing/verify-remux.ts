@@ -151,27 +151,45 @@ export function verifyRemux(
   targetDuration: number,
   audioMode: AudioMode = source.audio ? "packet-copy" : "none",
 ): RemuxVerification {
+  const expectedVideoDuration = Math.max(
+    0,
+    ...videoLedger.map((packet) => packet.timestamp + packet.duration),
+  )
   const duration =
     Math.abs(output.duration - targetDuration) <= TIMELINE_TOLERANCE_SECONDS &&
-    Math.abs(output.video.duration - targetDuration) <= TIMELINE_TOLERANCE_SECONDS &&
+    Math.abs(output.video.duration - expectedVideoDuration) <= TIMELINE_TOLERANCE_SECONDS &&
     (output.audio === null ||
       Math.abs(output.audio.duration - targetDuration) <= TIMELINE_TOLERANCE_SECONDS)
   const codecs =
     source.video.codec === output.video.codec && source.audio?.codec === output.audio?.codec
   const videoGeometry = equalVideo(source.video, output.video)
   const audioProperties = equalAudio(source.audio, output.audio, audioMode)
-  const packetLedger =
-    assertPacketLedger(output.video.packets, videoLedger) &&
-    (audioMode === "none"
+  const videoPacketsMatch = assertPacketLedger(output.video.packets, videoLedger)
+  const audioPacketsMatch =
+    audioMode === "none"
       ? output.audio === null
       : audioMode === "reencode"
         ? output.audio?.timeline.kind !== "unsupported"
         : output.audio !== null &&
           audioLedger !== null &&
-          assertPacketLedger(output.audio.packets, audioLedger))
+          assertPacketLedger(output.audio.packets, audioLedger)
+  const packetLedger = videoPacketsMatch && audioPacketsMatch
 
   if (!duration || !codecs || !videoGeometry || !audioProperties || !packetLedger) {
-    throw new RemuxError("verification-failed", "The remuxed MP4 did not preserve its contract.")
+    const failedChecks = Object.entries({
+      duration,
+      codecs,
+      videoGeometry,
+      audioProperties,
+      packetLedger,
+    })
+      .filter(([, passed]) => !passed)
+      .map(([check]) => check)
+      .join(", ")
+    throw new RemuxError(
+      "verification-failed",
+      `The remuxed MP4 failed verification: ${failedChecks}.`,
+    )
   }
 
   return {
