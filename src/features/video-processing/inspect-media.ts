@@ -191,8 +191,8 @@ export async function inspectMedia(blob: Blob, signal?: AbortSignal): Promise<Me
       }
     }
 
-    const duration = await input.computeDuration(tracks)
-    if (!Number.isFinite(duration) || duration <= 0) {
+    const computedDuration = await input.computeDuration(tracks)
+    if (!Number.isFinite(computedDuration) || computedDuration <= 0) {
       throw new RemuxError("invalid-duration", "The MP4 duration is invalid.")
     }
 
@@ -201,18 +201,31 @@ export async function inspectMedia(blob: Blob, signal?: AbortSignal): Promise<Me
       input.getFirstTimestamp([videoTrack]),
       videoTrack.computeDuration(),
     ])
-    assertVideoTimeline(videoFirstTimestamp, videoDuration, duration, audioTracks.length === 1)
-
     throwIfAborted(signal)
     const video = await inspectVideo(videoTrack, videoDuration, signal)
     const audioTrack = audioTracks[0] as InputAudioTrack | undefined
     const audioDuration = audioTrack ? await audioTrack.computeDuration() : null
-    if (audioDuration !== null) {
-      assertTrackTimeline(0, audioDuration, duration)
-    }
     const audio = audioTrack
-      ? await inspectAudio(audioTrack, audioDuration as number, duration, signal)
+      ? await inspectAudio(audioTrack, audioDuration as number, computedDuration, signal)
       : null
+    const primedAudioDuration =
+      audio?.timeline.kind === "reencode" &&
+      audio.timeline.firstTimestamp !== null &&
+      audio.timeline.endTimestamp !== null
+        ? audio.timeline.endTimestamp - audio.timeline.firstTimestamp
+        : null
+    const duration =
+      primedAudioDuration === null
+        ? computedDuration
+        : Math.max(computedDuration, primedAudioDuration)
+
+    assertVideoTimeline(videoFirstTimestamp, videoDuration, duration, audio !== null)
+    if (audio) {
+      audio.timeline = classifyAudioTimeline(audio.packets, duration)
+      if (audio.timeline.kind === "packet-copy") {
+        assertTrackTimeline(0, audioDuration as number, duration)
+      }
+    }
 
     const sharedOrigin =
       audio?.timeline.kind === "packet-copy"

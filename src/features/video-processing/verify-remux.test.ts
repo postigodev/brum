@@ -57,4 +57,45 @@ describe("remux verification", () => {
       )
     }
   })
+
+  it("accepts AAC-LC output at the decoded rate after HE-AAC re-encoding", () => {
+    const source = {
+      ...inspection,
+      audio: {
+        kind: "audio" as const,
+        codec: "aac" as const,
+        codecString: "mp4a.40.5",
+        sampleRate: 22_050,
+        numberOfChannels: 2,
+        decoderConfig: { codec: "mp4a.40.5", sampleRate: 22_050, numberOfChannels: 2 },
+        duration: 1,
+        packets: [packet],
+        timeline: {
+          kind: "reencode" as const,
+          reason: "priming",
+          firstTimestamp: -0.1,
+          endTimestamp: 0.9,
+        },
+      },
+    }
+    const output = {
+      ...source,
+      audio: {
+        ...source.audio,
+        codecString: "mp4a.40.2",
+        sampleRate: 44_100,
+        decoderConfig: { codec: "mp4a.40.2", sampleRate: 44_100, numberOfChannels: 2 },
+        timeline: {
+          kind: "packet-copy" as const,
+          reason: "aligned",
+          firstTimestamp: 0,
+          endTimestamp: 1,
+        },
+      },
+    }
+
+    expect(verifyRemux(source, output, ledger, null, 1, "reencode", 44_100).audioProperties).toBe(
+      true,
+    )
+  })
 })

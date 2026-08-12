@@ -52,7 +52,7 @@ export function classifyAudioTimeline(
 
   if (
     firstTimestamp < -TIMELINE_TOLERANCE_SECONDS &&
-    endTimestamp >= sourceDuration - TIMELINE_TOLERANCE_SECONDS
+    endTimestamp - firstTimestamp >= sourceDuration - TIMELINE_TOLERANCE_SECONDS
   ) {
     return {
       kind: "reencode",
@@ -75,6 +75,7 @@ export function createPcmCyclePlan(
   sourceDuration: number,
   outputDuration: number,
   sampleRate: number,
+  originTimestamp = 0,
 ): PcmCyclePlan | null {
   if (
     ![sourceDuration, outputDuration, sampleRate].every(
@@ -91,7 +92,7 @@ export function createPcmCyclePlan(
   const slices: PcmFrameSlice[] = []
   let cursor = 0
   for (const [sampleIndex, sample] of samples.entries()) {
-    const sampleStartFrame = Math.round(sample.timestamp * sampleRate)
+    const sampleStartFrame = Math.round((sample.timestamp - originTimestamp) * sampleRate)
     const startFrame = Math.max(0, -sampleStartFrame)
     const endFrame = Math.min(sample.numberOfFrames, cycleFrameCount - sampleStartFrame)
     if (endFrame <= startFrame) continue

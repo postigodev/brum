@@ -143,6 +143,7 @@ export async function remuxVideo(
       audioLedger,
       reconciledPlan.outputDuration,
       audioMode,
+      preparedAudio?.sampleRate,
     )
 
     const { packets: _videoPackets, decoderConfig: _videoConfig, ...video } = inspectedOutput.video

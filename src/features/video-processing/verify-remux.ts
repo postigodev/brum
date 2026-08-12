@@ -78,11 +78,14 @@ function equalAudio(
   source: AudioTrackSummary | null,
   output: AudioTrackSummary | null,
   audioMode: AudioMode,
+  reencodedSampleRate?: number,
 ) {
   if (!source || !output) return source === output
   const propertiesMatch =
-    source.codecString === output.codecString &&
-    source.sampleRate === output.sampleRate &&
+    (audioMode === "reencode" || source.codecString === output.codecString) &&
+    (audioMode === "reencode"
+      ? output.sampleRate === reencodedSampleRate
+      : source.sampleRate === output.sampleRate) &&
     source.numberOfChannels === output.numberOfChannels
   return (
     propertiesMatch &&
@@ -150,6 +153,7 @@ export function verifyRemux(
   audioLedger: readonly PacketLedgerEntry[] | null,
   targetDuration: number,
   audioMode: AudioMode = source.audio ? "packet-copy" : "none",
+  reencodedSampleRate?: number,
 ): RemuxVerification {
   const expectedVideoDuration = Math.max(
     0,
@@ -163,7 +167,7 @@ export function verifyRemux(
   const codecs =
     source.video.codec === output.video.codec && source.audio?.codec === output.audio?.codec
   const videoGeometry = equalVideo(source.video, output.video)
-  const audioProperties = equalAudio(source.audio, output.audio, audioMode)
+  const audioProperties = equalAudio(source.audio, output.audio, audioMode, reencodedSampleRate)
   const videoPacketsMatch = assertPacketLedger(output.video.packets, videoLedger)
   const audioPacketsMatch =
     audioMode === "none"

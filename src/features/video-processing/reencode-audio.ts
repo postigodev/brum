@@ -29,6 +29,7 @@ export type ReencodedPacket = {
 export type PreparedReencodedAudio = {
   packets: ReencodedPacket[]
   bitrate: number
+  sampleRate: number
 }
 
 function chooseBitrate(audio: AudioTrackSummary, sourceDuration: number) {
@@ -100,6 +101,16 @@ export async function prepareReencodedAudio(
   }
 
   try {
+    const decodedSampleRate = decodedSamples[0]?.sampleRate
+    if (
+      !decodedSampleRate ||
+      decodedSamples.some((sample) => sample.sampleRate !== decodedSampleRate)
+    ) {
+      throw new RemuxError(
+        "unsupported-audio-timeline",
+        "The decoded AAC samples do not share one sample rate.",
+      )
+    }
     const cyclePlan = createPcmCyclePlan(
       decodedSamples.map((sample) => ({
         timestamp: sample.timestamp,
@@ -107,7 +118,16 @@ export async function prepareReencodedAudio(
       })),
       plan.sourceDuration,
       plan.outputDuration,
-      audio.sampleRate,
+      decodedSampleRate,
+      audio.timeline.kind === "reencode" &&
+        audio.timeline.firstTimestamp !== null &&
+        audio.timeline.endTimestamp !== null &&
+        audio.timeline.endTimestamp < plan.sourceDuration - 0.001 &&
+        Math.abs(
+          audio.timeline.endTimestamp - audio.timeline.firstTimestamp - plan.sourceDuration,
+        ) <= 0.001
+        ? audio.timeline.firstTimestamp
+        : 0,
     )
     if (!cyclePlan) {
       throw new RemuxError(
@@ -117,7 +137,7 @@ export async function prepareReencodedAudio(
     }
 
     const bitrate = chooseBitrate(audio, plan.sourceDuration)
-    await ensureAacEncoder(audio.sampleRate, audio.numberOfChannels, bitrate)
+    await ensureAacEncoder(decodedSampleRate, audio.numberOfChannels, bitrate)
 
     const encodedPackets: ReencodedPacket[] = []
     const source = new AudioSampleSource({
@@ -146,7 +166,7 @@ export async function prepareReencodedAudio(
           if (frameCount <= 0) break
 
           const sample = base.trim(slice.startFrame, slice.startFrame + frameCount)
-          sample.setTimestamp(outputCursor / audio.sampleRate)
+          sample.setTimestamp(outputCursor / decodedSampleRate)
           outputCursor += frameCount
           try {
             await source.add(sample)
@@ -169,6 +189,7 @@ export async function prepareReencodedAudio(
     return {
       packets: fitEncodedPacketsToDuration(encodedPackets, plan.outputDuration),
       bitrate,
+      sampleRate: decodedSampleRate,
     }
   } catch (error) {
     if (error instanceof RemuxError) throw error
