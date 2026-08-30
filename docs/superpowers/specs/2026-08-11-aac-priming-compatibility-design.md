@@ -1,5 +1,8 @@
 # AAC Priming Compatibility Design
 
+> [!WARNING]
+> **Historical and superseded.** This design records AAC preservation and re-encoding within the former packet-remux path. Audio preservation as a product requirement is superseded by the silent MVP in [#2](https://github.com/postigodev/brumaire/issues/2), with old-path cleanup owned by [#6](https://github.com/postigodev/brumaire/issues/6); consult [#3](https://github.com/postigodev/brumaire/issues/3) and [#4](https://github.com/postigodev/brumaire/issues/4) for current behavioral and resource implications. The design remains unchanged below as historical evidence and is not a current requirement; see `AGENTS.md`.
+
 ## Purpose
 
 Extend the local remux spike to accept ordinary MP4/AAC timelines whose encoder priming begins before time zero. Preserve the existing packet-copy fast path whenever the input is already aligned. When exact synchronized repetition is not safe through packet copying, re-encode only the audio and continue copying H.264 video packets byte-for-byte.

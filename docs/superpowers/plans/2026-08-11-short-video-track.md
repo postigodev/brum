@@ -1,5 +1,8 @@
 # Short Video Track Compatibility Implementation Plan
 
+> [!WARNING]
+> **Historical and superseded.** This completed plan records tail-gap handling within the former packet-copy/remux and audio-preservation architecture. Those assumptions are superseded by [#2](https://github.com/postigodev/brumaire/issues/2) and cleanup in [#6](https://github.com/postigodev/brumaire/issues/6); consult [#3](https://github.com/postigodev/brumaire/issues/3) and [#4](https://github.com/postigodev/brumaire/issues/4) for current behavioral and resource implications. Its checkboxes, validation results, and embedded agent instructions remain historical evidence and are not current requirements; see `AGENTS.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Process H.264/AAC MP4s whose video ends up to 250 ms before full-length AAC audio by preserving the source tail gap through each repetition boundary.

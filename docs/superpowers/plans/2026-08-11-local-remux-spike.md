@@ -1,5 +1,8 @@
 # Brumaire Local Remux Spike Implementation Plan
 
+> [!WARNING]
+> **Historical and superseded.** This completed plan records the former packet-copy/remux architecture. Its H.264 packet-preservation, no-decode/no-transcode, and audio-preservation constraints are superseded by [#2](https://github.com/postigodev/brumaire/issues/2) and cleanup in [#6](https://github.com/postigodev/brumaire/issues/6); current behavioral and resource requirements are owned by [#3](https://github.com/postigodev/brumaire/issues/3) and [#4](https://github.com/postigodev/brumaire/issues/4). Its checkboxes, validation results, and embedded agent instructions remain historical evidence and are not current requirements; see `AGENTS.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Prove exact-duration, packet-preserving local MP4 extension in a development-only browser harness without changing the product `/tool` route.

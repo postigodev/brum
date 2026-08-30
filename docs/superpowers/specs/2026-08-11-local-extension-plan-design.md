@@ -1,5 +1,8 @@
 # Brumaire Local Extension Plan Design
 
+> [!WARNING]
+> **Historical and superseded.** This design records the former total-forward-play extension semantics. [#1](https://github.com/postigodev/brumaire/issues/1) supersedes them with forward + reverse boomerang cycles. The design remains unchanged below as historical evidence and is not a current requirement; see the source-of-truth hierarchy in `AGENTS.md`.
+
 ## Purpose
 
 Add the third step of Brumaire's local workflow: read the selected video's duration and turn the chosen target into a deterministic extension plan. This step explains what a future processor must produce without encoding, transforming, exporting, or uploading video.

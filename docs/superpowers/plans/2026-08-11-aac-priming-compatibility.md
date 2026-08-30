@@ -1,5 +1,8 @@
 # AAC Priming Compatibility Implementation Plan
 
+> [!WARNING]
+> **Historical and superseded.** This completed plan records AAC preservation and re-encoding within the former packet-remux path. Audio preservation as a product requirement is superseded by the silent MVP in [#2](https://github.com/postigodev/brumaire/issues/2), with old-path cleanup owned by [#6](https://github.com/postigodev/brumaire/issues/6); consult [#3](https://github.com/postigodev/brumaire/issues/3) and [#4](https://github.com/postigodev/brumaire/issues/4) for current behavioral and resource implications. Its checkboxes, validation results, and embedded agent instructions remain historical evidence and are not current requirements; see `AGENTS.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Accept ordinary negative AAC priming by re-encoding audio only while preserving the existing byte-copy H.264 path and exact target duration.

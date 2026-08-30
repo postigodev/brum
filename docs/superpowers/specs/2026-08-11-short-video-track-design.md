@@ -1,5 +1,8 @@
 # Short video track compatibility
 
+> [!WARNING]
+> **Historical and superseded.** This design records tail-gap handling within the former packet-copy/remux and audio-preservation architecture. Those assumptions are superseded by [#2](https://github.com/postigodev/brumaire/issues/2) and cleanup in [#6](https://github.com/postigodev/brumaire/issues/6); consult [#3](https://github.com/postigodev/brumaire/issues/3) and [#4](https://github.com/postigodev/brumaire/issues/4) for current behavioral and resource implications. The design remains unchanged below as historical evidence and is not a current requirement; see `AGENTS.md`.
+
 ## Goal
 
 Accept ordinary H.264/AAC MP4 files whose video track ends slightly before the container and audio track, while preserving local-only processing, packet-copy video quality, synchronized repetition, and exact output duration.

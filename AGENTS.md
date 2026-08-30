@@ -2,6 +2,40 @@
 
 
 
+## Source of truth
+
+
+
+When instructions conflict, use this precedence:
+
+
+
+1. The user's requirements and the current active GitHub issue.
+2. This `AGENTS.md` repository contract.
+3. Current product documentation such as `README.md`.
+4. Dated plans and specs under `docs/superpowers/`.
+
+
+
+Completed dated plans and specs under `docs/superpowers/` are historical implementation records. Their `Global Constraints`, implementation steps, and `For agentic workers` instructions are not current requirements unless the active issue explicitly adopts them. Preserve these records as evidence of why the current code exists, not as authority requiring that architecture to remain.
+
+
+
+## Current product invariants
+
+
+
+* The product name is **Brum**. The GitHub repository may remain named `brumaire` unless a separate request changes it.
+* Brum creates Instagram-style boomerang video: motion plays forward and then backward.
+* One boomerang loop is one complete forward + reverse cycle.
+* MVP generated output is intentionally silent.
+* Do not implement reverse playback by reversing H.264 `EncodedPacket` arrays or merely reversing encoded timestamps. Reversing motion requires decoded presentation-order video frames and re-encoding.
+* Media processing remains local and on-device. Do not upload user media.
+* Prefer the existing Mediabunny/browser media stack before introducing FFmpeg.wasm or server-side processing.
+* Exact-duration targets must still produce the requested output duration.
+
+
+
 \## General
 
 

@@ -1,5 +1,8 @@
 # Local Extension Plan Implementation Plan
 
+> [!WARNING]
+> **Historical and superseded.** This completed plan preserves the former `totalPlays` and repeated-forward-play semantics for provenance. Those product semantics are superseded by [#1](https://github.com/postigodev/brumaire/issues/1), where one loop is a forward + reverse cycle. Its checkboxes, constraints, validation records, and embedded agent instructions remain historical evidence and are not current requirements; see the source-of-truth hierarchy in `AGENTS.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Read a selected video's local duration and turn a Duration or Loops target into a tested, deterministic extension plan without processing media.

@@ -1,5 +1,8 @@
 # Brumaire Local Remux Spike Design
 
+> [!WARNING]
+> **Historical and superseded.** This design records the former packet-copy/remux architecture. Its H.264 packet-preservation, no-decode/no-transcode, and audio-preservation assumptions are superseded by [#2](https://github.com/postigodev/brumaire/issues/2) and cleanup in [#6](https://github.com/postigodev/brumaire/issues/6); consult [#3](https://github.com/postigodev/brumaire/issues/3) and [#4](https://github.com/postigodev/brumaire/issues/4) for current behavioral and resource implications. The design remains unchanged below as historical evidence and is not a current requirement; see `AGENTS.md`.
+
 ## Purpose
 
 Prove that Brumaire can turn a short local MP4 into a longer, exact-duration MP4 on an iPhone-class browser without uploading media or recompressing its supported tracks. The spike validates the riskiest processing assumption before the production `/tool` workflow gains a Process action.
