@@ -254,6 +254,15 @@ Keep documentation aligned with the implementation rather than describing hypoth
 
 
 
+## Contribution conventions
+
+
+
+* Name branches `postigodev/<branch-name>` for repository-owner work. Other contributors must use `<github-username>/<branch-name>` with their own GitHub username.
+* Every commit message must follow `type(scope): description`.
+
+
+
 \## Repository hygiene
 
 
