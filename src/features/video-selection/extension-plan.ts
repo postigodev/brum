@@ -10,11 +10,12 @@ export type ExtensionTarget = {
 
 export type ExtensionPlan = {
   sourceDuration: number
+  cycleDuration: number
   target: ExtensionTarget
   outputDuration: number
-  totalPlays: number
-  completePlays: number
-  finalPartialDuration: number | null
+  totalCycles: number
+  completeCycles: number
+  finalPartialCycleDuration: number | null
 }
 
 export type ExtensionPlanResult =
@@ -32,6 +33,10 @@ const DURATION_EPSILON_SECONDS = 0.001
 
 function isFinitePositive(value: number) {
   return Number.isFinite(value) && value > 0
+}
+
+function isFiniteNonNegativeInteger(value: number) {
+  return Number.isFinite(value) && Number.isInteger(value) && value >= 0
 }
 
 function includesValue(values: readonly number[], candidate: number) {
@@ -59,8 +64,13 @@ export function createExtensionPlan(
     return { ok: false, reason: "unsupported-target" }
   }
 
+  const cycleDuration = sourceDuration * 2
+  if (!isFinitePositive(cycleDuration)) {
+    return { ok: false, reason: "non-finite-result" }
+  }
+
   if (target.mode === "loops") {
-    const outputDuration = sourceDuration * target.value
+    const outputDuration = cycleDuration * target.value
     if (!isFinitePositive(outputDuration)) {
       return { ok: false, reason: "non-finite-result" }
     }
@@ -69,11 +79,12 @@ export function createExtensionPlan(
       ok: true,
       plan: {
         sourceDuration,
+        cycleDuration,
         target,
         outputDuration,
-        totalPlays: target.value,
-        completePlays: target.value,
-        finalPartialDuration: null,
+        totalCycles: target.value,
+        completeCycles: target.value,
+        finalPartialCycleDuration: null,
       },
     }
   }
@@ -82,20 +93,27 @@ export function createExtensionPlan(
     return { ok: false, reason: "target-does-not-extend" }
   }
 
-  let completePlays = Math.floor(target.value / sourceDuration)
-  let remainder = target.value - completePlays * sourceDuration
+  let completeCycles = Math.floor(target.value / cycleDuration)
+  let remainder = target.value - completeCycles * cycleDuration
 
   if (remainder <= DURATION_EPSILON_SECONDS) {
     remainder = 0
-  } else if (sourceDuration - remainder <= DURATION_EPSILON_SECONDS) {
-    completePlays += 1
+  } else if (cycleDuration - remainder <= DURATION_EPSILON_SECONDS) {
+    completeCycles += 1
     remainder = 0
+  } else if (Math.abs(sourceDuration - remainder) <= DURATION_EPSILON_SECONDS) {
+    remainder = sourceDuration
   }
 
-  const finalPartialDuration = remainder === 0 ? null : remainder
-  const totalPlays = completePlays + (finalPartialDuration === null ? 0 : 1)
+  const finalPartialCycleDuration = remainder === 0 ? null : remainder
+  const totalCycles = completeCycles + (finalPartialCycleDuration === null ? 0 : 1)
 
-  if (![completePlays, totalPlays, target.value].every(isFinitePositive)) {
+  if (
+    !isFiniteNonNegativeInteger(completeCycles) ||
+    !Number.isSafeInteger(totalCycles) ||
+    !isFinitePositive(totalCycles) ||
+    !isFinitePositive(target.value)
+  ) {
     return { ok: false, reason: "non-finite-result" }
   }
 
@@ -103,11 +121,12 @@ export function createExtensionPlan(
     ok: true,
     plan: {
       sourceDuration,
+      cycleDuration,
       target,
       outputDuration: target.value,
-      totalPlays,
-      completePlays,
-      finalPartialDuration,
+      totalCycles,
+      completeCycles,
+      finalPartialCycleDuration,
     },
   }
 }

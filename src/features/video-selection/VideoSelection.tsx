@@ -154,7 +154,7 @@ export function VideoSelection() {
     setStatus(
       targetMode === "duration"
         ? `Target set to ${value} seconds. Extension has not started.`
-        : `Target set to ${value} total plays. Extension has not started.`,
+        : `Target set to ${value} boomerang cycles. Extension has not started.`,
     )
   }
 
@@ -281,15 +281,16 @@ export function VideoSelection() {
     }
 
     if (plan.target.mode === "loops") {
-      return `${plan.totalPlays} total plays · ${formatDuration(plan.outputDuration)} output.`
+      return `${plan.totalCycles} boomerang cycles · ${formatDuration(plan.outputDuration)} output.`
     }
 
+    const completeCycleCopy = `${plan.completeCycles} complete ${plan.completeCycles === 1 ? "cycle" : "cycles"}`
     const trimCopy =
-      plan.finalPartialDuration === null
-        ? "complete plays only"
-        : `final play trimmed to ${formatDuration(plan.finalPartialDuration)}`
+      plan.finalPartialCycleDuration === null
+        ? `${completeCycleCopy} only`
+        : `${completeCycleCopy} · final cycle trimmed to ${formatDuration(plan.finalPartialCycleDuration)}`
 
-    return `${formatDuration(plan.outputDuration)} exact · ${plan.totalPlays} total plays · ${trimCopy}.`
+    return `${formatDuration(plan.outputDuration)} exact · ${trimCopy}.`
   })()
 
   return (
@@ -422,7 +423,7 @@ export function VideoSelection() {
 
           <fieldset className="ios-target-options-group">
             <legend className="ios-target-legend">
-              {targetMode === "duration" ? "Target duration" : "Total loops"}
+              {targetMode === "duration" ? "Target duration" : "Boomerang cycles"}
             </legend>
             <div className="ios-group">
               {activeTargetOptions.map((value) => {
@@ -442,7 +443,9 @@ export function VideoSelection() {
                       onChange={() => selectTarget(value)}
                     />
                     <span>
-                      {targetMode === "duration" ? `${value} seconds` : `${value}× total plays`}
+                      {targetMode === "duration"
+                        ? `${value} seconds`
+                        : `${value}× boomerang cycles`}
                     </span>
                     <span className="ios-target-option-trailing">
                       {unavailable ? (
