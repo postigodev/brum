@@ -6,6 +6,20 @@ import type { PacketLedgerEntry, PacketRecord, TrackKind } from "./types"
 export const TIMELINE_TOLERANCE_SECONDS = 0.001
 export const METADATA_DURATION_TOLERANCE_SECONDS = 0.05
 
+// Temporary compatibility for the forward-only remux. This maps the boomerang plan
+// to enough source passes to reach its duration; it does not produce reverse motion.
+// Issue #2 replaces this adapter with decoded forward/reverse frame processing.
+export function legacyForwardRepetitionCount(plan: ExtensionPlan) {
+  const partialCycleRepetitions =
+    plan.finalPartialCycleDuration === null
+      ? 0
+      : plan.finalPartialCycleDuration <= plan.sourceDuration
+        ? 1
+        : 2
+
+  return plan.completeCycles * 2 + partialCycleRepetitions
+}
+
 export function assertPlanMatchesSource(plan: ExtensionPlan, inspectedDuration: number) {
   if (!Number.isFinite(inspectedDuration) || inspectedDuration <= 0) {
     throw new RemuxError("invalid-duration", "The input duration is invalid.")
@@ -36,8 +50,9 @@ export function scheduleTrackPackets(
           : latest
       }, null)
     : null
+  const repetitionCount = legacyForwardRepetitionCount(plan)
 
-  for (let repetition = 0; repetition < plan.totalPlays; repetition += 1) {
+  for (let repetition = 0; repetition < repetitionCount; repetition += 1) {
     throwIfAborted(signal)
     const offset = repetition * plan.sourceDuration
 
@@ -48,7 +63,7 @@ export function scheduleTrackPackets(
       // When another GOP follows, the MP4 muxer derives the final presentation sample's
       // duration from the next keyframe. Model that metadata adjustment in the ledger.
       const packetDuration =
-        packet === presentationLatestPacket && repetition < plan.totalPlays - 1
+        packet === presentationLatestPacket && repetition < repetitionCount - 1
           ? plan.sourceDuration - packet.timestamp
           : packet.duration
       const duration = Math.min(packetDuration, plan.outputDuration - timestamp)

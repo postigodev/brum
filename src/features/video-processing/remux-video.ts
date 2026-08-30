@@ -12,7 +12,11 @@ import { createExtensionPlan, type ExtensionPlan } from "#/features/video-select
 import { RemuxError, throwIfAborted, toRemuxError } from "./errors"
 import { inspectMedia } from "./inspect-media"
 import { assertActualOutputSize, assertEstimatedOutputSize, assertInputSize } from "./limits"
-import { assertPlanMatchesSource, scheduleTrackPackets } from "./packet-schedule"
+import {
+  assertPlanMatchesSource,
+  legacyForwardRepetitionCount,
+  scheduleTrackPackets,
+} from "./packet-schedule"
 import { type PreparedReencodedAudio, prepareReencodedAudio } from "./reencode-audio"
 import type { AudioMode, PacketLedgerEntry, PacketRecord, RemuxOptions, RemuxResult } from "./types"
 import { verifyDecodedAudio, verifyRemux } from "./verify-remux"
@@ -49,7 +53,7 @@ export async function remuxVideo(
       )
     }
     const reconciledPlan = reconciledPlanResult.plan
-    assertEstimatedOutputSize(file.size, reconciledPlan.totalPlays)
+    assertEstimatedOutputSize(file.size, legacyForwardRepetitionCount(reconciledPlan))
     if (source.audio?.timeline.kind === "unsupported") {
       throw new RemuxError("unsupported-audio-timeline", source.audio.timeline.reason)
     }

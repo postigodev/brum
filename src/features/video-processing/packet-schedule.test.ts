@@ -35,20 +35,26 @@ const packets: PacketRecord[] = [
   },
 ]
 
-function plan(outputDuration: number, totalPlays: number): ExtensionPlan {
+function plan(outputDuration: number): ExtensionPlan {
+  const sourceDuration = 1
+  const cycleDuration = sourceDuration * 2
+  const completeCycles = Math.floor(outputDuration / cycleDuration)
+  const finalPartialCycleDuration = outputDuration % cycleDuration || null
+
   return {
-    sourceDuration: 1,
+    sourceDuration,
+    cycleDuration,
     target: { mode: "duration", value: outputDuration },
     outputDuration,
-    totalPlays,
-    completePlays: Math.floor(outputDuration),
-    finalPartialDuration: outputDuration % 1 || null,
+    totalCycles: completeCycles + (finalPartialCycleDuration === null ? 0 : 1),
+    completeCycles,
+    finalPartialCycleDuration,
   }
 }
 
 describe("packet scheduling", () => {
   it("repeats complete packet sequences on the shared timeline", () => {
-    const ledger = scheduleTrackPackets("video", packets, plan(2, 2))
+    const ledger = scheduleTrackPackets("video", packets, plan(2))
     const expected = [
       [0, 0.4],
       [0.4, 0.4],
@@ -65,7 +71,7 @@ describe("packet scheduling", () => {
   })
 
   it("shortens only the packet crossing an exact partial cutoff", () => {
-    const ledger = scheduleTrackPackets("video", packets, plan(1.5, 2))
+    const ledger = scheduleTrackPackets("video", packets, plan(1.5))
     expect(ledger.at(-1)).toMatchObject({ sourceIndex: 1, repetition: 1, timestamp: 1.4 })
     expect(ledger.at(-1)?.duration).toBeCloseTo(0.1, 10)
   })
@@ -74,7 +80,7 @@ describe("packet scheduling", () => {
     const shortVideoPackets = packets.map((packet, index) =>
       index === 2 ? { ...packet, duration: 0.04 } : packet,
     )
-    const ledger = scheduleTrackPackets("video", shortVideoPackets, plan(2, 2), undefined, 0.84)
+    const ledger = scheduleTrackPackets("video", shortVideoPackets, plan(2), undefined, 0.84)
 
     const heldPackets = ledger.filter((entry) => entry.sourceIndex === 2)
     expect(heldPackets).toMatchObject([
@@ -91,7 +97,7 @@ describe("packet scheduling", () => {
     const shortVideoPackets = packets.map((packet, index) =>
       index === 2 ? { ...packet, duration: 0.04 } : packet,
     )
-    const ledger = scheduleTrackPackets("video", shortVideoPackets, plan(1.9, 2), undefined, 0.84)
+    const ledger = scheduleTrackPackets("video", shortVideoPackets, plan(1.9), undefined, 0.84)
 
     expect(ledger.at(-1)).toMatchObject({ sourceIndex: 2, repetition: 1, timestamp: 1.8 })
     expect(ledger.at(-1)?.duration).toBeCloseTo(0.04, 10)
@@ -99,13 +105,13 @@ describe("packet scheduling", () => {
   })
 
   it("rejects stale plans and observes cancellation", () => {
-    expect(() => assertPlanMatchesSource(plan(2, 2), 1.1)).toThrowError(
+    expect(() => assertPlanMatchesSource(plan(2), 1.1)).toThrowError(
       expect.objectContaining({ code: "plan-duration-mismatch" }),
     )
     const controller = new AbortController()
     controller.abort()
-    expect(() =>
-      scheduleTrackPackets("video", packets, plan(2, 2), controller.signal),
-    ).toThrowError(expect.objectContaining({ code: "canceled" }))
+    expect(() => scheduleTrackPackets("video", packets, plan(2), controller.signal)).toThrowError(
+      expect.objectContaining({ code: "canceled" }),
+    )
   })
 })

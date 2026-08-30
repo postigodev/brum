@@ -28,56 +28,89 @@ describe("isDurationTargetAvailable", () => {
 })
 
 describe("createExtensionPlan", () => {
-  it("creates an exact divisible duration plan without a partial play", () => {
+  it("creates an exactly divisible duration plan from complete cycles", () => {
     expect(createExtensionPlan(1.5, { mode: "duration", value: 15 })).toEqual({
       ok: true,
       plan: {
         sourceDuration: 1.5,
+        cycleDuration: 3,
         target: { mode: "duration", value: 15 },
         outputDuration: 15,
-        totalPlays: 10,
-        completePlays: 10,
-        finalPartialDuration: null,
+        totalCycles: 5,
+        completeCycles: 5,
+        finalPartialCycleDuration: null,
       },
     })
   })
 
-  it("creates an exact non-divisible duration plan with one partial play", () => {
-    expect(createExtensionPlan(1.4, { mode: "duration", value: 15 })).toEqual({
+  it("represents a cutoff inside the forward half of a partial cycle", () => {
+    expect(createExtensionPlan(7, { mode: "duration", value: 15 })).toEqual({
       ok: true,
       plan: {
-        sourceDuration: 1.4,
+        sourceDuration: 7,
+        cycleDuration: 14,
         target: { mode: "duration", value: 15 },
         outputDuration: 15,
-        totalPlays: 11,
-        completePlays: 10,
-        finalPartialDuration: 1,
+        totalCycles: 2,
+        completeCycles: 1,
+        finalPartialCycleDuration: 1,
+      },
+    })
+  })
+
+  it("represents a cutoff inside the reverse half with zero complete cycles", () => {
+    expect(createExtensionPlan(10, { mode: "duration", value: 15 })).toEqual({
+      ok: true,
+      plan: {
+        sourceDuration: 10,
+        cycleDuration: 20,
+        target: { mode: "duration", value: 15 },
+        outputDuration: 15,
+        totalCycles: 1,
+        completeCycles: 0,
+        finalPartialCycleDuration: 15,
       },
     })
   })
 
   it.each([
-    1.49999999, 1.50000001,
-  ])("normalizes a divisibility boundary for source %s", (sourceDuration) => {
+    { boundary: "cycle start", sourceDuration: 1.49999999 },
+    { boundary: "cycle end", sourceDuration: 1.50000001 },
+  ])("normalizes a remainder near the $boundary", ({ sourceDuration }) => {
     const result = createExtensionPlan(sourceDuration, { mode: "duration", value: 15 })
     expect(result.ok).toBe(true)
     if (result.ok) {
-      expect(result.plan.totalPlays).toBe(10)
-      expect(result.plan.completePlays).toBe(10)
-      expect(result.plan.finalPartialDuration).toBeNull()
+      expect(result.plan.totalCycles).toBe(5)
+      expect(result.plan.completeCycles).toBe(5)
+      expect(result.plan.finalPartialCycleDuration).toBeNull()
+      expect(result.plan.outputDuration).toBe(15)
     }
   })
 
-  it.each(LOOP_TARGETS)("creates a complete %s-play loop plan", (value) => {
+  it.each([
+    2.9999999, 3.0000001,
+  ])("normalizes a remainder near the forward/reverse turnaround for source %s", (sourceDuration) => {
+    const result = createExtensionPlan(sourceDuration, { mode: "duration", value: 15 })
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.plan.totalCycles).toBe(3)
+      expect(result.plan.completeCycles).toBe(2)
+      expect(result.plan.finalPartialCycleDuration).toBe(sourceDuration)
+      expect(result.plan.outputDuration).toBe(15)
+    }
+  })
+
+  it.each(LOOP_TARGETS)("creates a complete %s-cycle loop plan", (value) => {
     expect(createExtensionPlan(1.25, { mode: "loops", value })).toEqual({
       ok: true,
       plan: {
         sourceDuration: 1.25,
+        cycleDuration: 2.5,
         target: { mode: "loops", value },
-        outputDuration: 1.25 * value,
-        totalPlays: value,
-        completePlays: value,
-        finalPartialDuration: null,
+        outputDuration: 1.25 * 2 * value,
+        totalCycles: value,
+        completeCycles: value,
+        finalPartialCycleDuration: null,
       },
     })
   })

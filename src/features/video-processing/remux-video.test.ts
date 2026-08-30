@@ -35,13 +35,14 @@ describe("local MP4 remux", () => {
     })
   })
 
-  it("copies H.264 packets into an exact two-loop MP4", async () => {
+  it("keeps the legacy packet remux aligned with the planned loop duration", async () => {
     const file = await fixture("h264-video.mp4")
     const source = await inspectMedia(file)
-    const result = await remuxVideo(file, loopPlan(source.duration))
+    const plan = loopPlan(source.duration)
+    const result = await remuxVideo(file, plan)
 
     expect(result.blob.type).toBe("video/mp4")
-    expect(result.duration).toBeCloseTo(2, 3)
+    expect(result.duration).toBeCloseTo(plan.outputDuration, 3)
     expect(result.video).toMatchObject({ codec: "avc", codedWidth: 160, codedHeight: 120 })
     expect(result.verification).toEqual({
       duration: true,
@@ -65,9 +66,10 @@ describe("local MP4 remux", () => {
   it("copies optional AAC while preserving synchronization", async () => {
     const file = await fixture("h264-aac.mp4")
     const source = await inspectMedia(file)
-    const result = await remuxVideo(file, loopPlan(source.duration))
+    const plan = loopPlan(source.duration)
+    const result = await remuxVideo(file, plan)
 
-    expect(result.duration).toBeCloseTo(source.duration * 2, 3)
+    expect(result.duration).toBeCloseTo(plan.outputDuration, 3)
     expect(result.audio).toMatchObject({ codec: "aac", sampleRate: 48_000, numberOfChannels: 1 })
     expect(result.audioMode).toBe("packet-copy")
     expect(result.audioBitrate).toBeNull()
@@ -78,10 +80,11 @@ describe("local MP4 remux", () => {
     const file = await fixture("h264-aac.mp4")
     const source = await inspectMedia(file)
     const roundedDuration = source.duration - 0.002
-    const result = await remuxVideo(file, loopPlan(roundedDuration))
+    const plan = loopPlan(roundedDuration)
+    const result = await remuxVideo(file, plan)
 
     expect(source.duration - roundedDuration).toBeCloseTo(0.002, 6)
-    expect(result.duration).toBeCloseTo(source.duration * 2, 3)
+    expect(result.duration).toBeCloseTo(source.duration * 2 * plan.target.value, 3)
     expect(result.verification.duration).toBe(true)
   })
 
@@ -93,15 +96,21 @@ describe("local MP4 remux", () => {
     expect(source.video.duration).toBeCloseTo(0.84, 3)
     expect(source.audio?.duration).toBeCloseTo(source.duration, 3)
 
-    const result = await remuxVideo(file, loopPlan(source.duration))
+    const plan = loopPlan(source.duration)
+    const result = await remuxVideo(file, plan)
     const output = await inspectMedia(result.blob)
     const sourceHashes = source.video.packets.map((packet) => packet.hash)
 
-    expect(result.duration).toBeCloseTo(source.duration * 2, 3)
-    expect(result.video.duration).toBeCloseTo(source.duration + source.video.duration, 3)
-    expect(result.audio?.duration).toBeCloseTo(source.duration * 2, 3)
+    expect(result.duration).toBeCloseTo(plan.outputDuration, 3)
+    expect(result.video.duration).toBeCloseTo(
+      plan.outputDuration - source.duration + source.video.duration,
+      3,
+    )
+    expect(result.audio?.duration).toBeCloseTo(plan.outputDuration, 3)
     expect(result.audioMode).toBe("packet-copy")
     expect(output.video.packets.map((packet) => packet.hash)).toEqual([
+      ...sourceHashes,
+      ...sourceHashes,
       ...sourceHashes,
       ...sourceHashes,
     ])

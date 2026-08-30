@@ -9,8 +9,8 @@ export function assertInputSize(byteSize: number) {
   }
 }
 
-export function assertEstimatedOutputSize(inputBytes: number, totalPlays: number) {
-  const estimate = inputBytes * totalPlays
+export function assertEstimatedOutputSize(inputBytes: number, repetitions: number) {
+  const estimate = inputBytes * repetitions
   if (!Number.isSafeInteger(estimate) || estimate > MAX_OUTPUT_BYTES) {
     throw new RemuxError("output-too-large", "The estimated output exceeds 200 MiB.")
   }
