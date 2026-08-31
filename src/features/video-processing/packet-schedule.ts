@@ -8,7 +8,8 @@ export const METADATA_DURATION_TOLERANCE_SECONDS = 0.05
 
 // Temporary compatibility for the forward-only remux. This maps the boomerang plan
 // to enough source passes to reach its duration; it does not produce reverse motion.
-// Issue #2 replaces this adapter with decoded forward/reverse frame processing.
+// Production uses decoded forward/reverse processing; this remains only for the legacy remux spike
+// until its broader cleanup in issue #6.
 export function legacyForwardRepetitionCount(plan: ExtensionPlan) {
   const partialCycleRepetitions =
     plan.finalPartialCycleDuration === null

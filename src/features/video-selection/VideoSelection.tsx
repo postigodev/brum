@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from "react"
 
-import { RemuxError, type RemuxResult, remuxVideo } from "#/features/video-processing"
+import {
+  type BoomerangResult,
+  createBoomerangVideo,
+  RemuxError,
+  readVideoTrackDuration,
+} from "#/features/video-processing"
 
 import {
   createExtensionPlan,
@@ -42,7 +47,7 @@ export function VideoSelection() {
   const abortRef = useRef<AbortController | null>(null)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
-  const [result, setResult] = useState<RemuxResult | null>(null)
+  const [result, setResult] = useState<BoomerangResult | null>(null)
   const [resultUrl, setResultUrl] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [status, setStatus] = useState("No video selected.")
@@ -51,6 +56,10 @@ export function VideoSelection() {
   const [targetMode, setTargetMode] = useState<TargetMode>("duration")
   const [targetValue, setTargetValue] = useState<number | null>(null)
   const [metadata, setMetadata] = useState<MetadataState>({ status: "loading" })
+  const targetModeRef = useRef(targetMode)
+  const targetValueRef = useRef(targetValue)
+  targetModeRef.current = targetMode
+  targetValueRef.current = targetValue
 
   useEffect(() => {
     if (!selectedFile) {
@@ -62,6 +71,43 @@ export function VideoSelection() {
     setPreviewUrl(objectUrl)
 
     return () => URL.revokeObjectURL(objectUrl)
+  }, [selectedFile])
+
+  useEffect(() => {
+    if (!selectedFile) return
+
+    const controller = new AbortController()
+    void readVideoTrackDuration(selectedFile, controller.signal)
+      .then((duration) => {
+        setMetadata({ status: "ready", duration })
+        setError(null)
+
+        const currentTarget = targetValueRef.current
+        if (
+          targetModeRef.current === "duration" &&
+          currentTarget !== null &&
+          !isDurationTargetAvailable(duration, currentTarget)
+        ) {
+          setTargetValue(null)
+          setStatus("The previous duration does not extend this video. Choose a longer target.")
+          return
+        }
+
+        setStatus(`Video duration read: ${formatDuration(duration)}.`)
+      })
+      .catch((caught: unknown) => {
+        if (controller.signal.aborted) return
+        setMetadata({ status: "error" })
+        setTargetValue(null)
+        setError(
+          caught instanceof RemuxError
+            ? processingErrorMessage(caught.code)
+            : "Brumaire could not read this video's visual duration. Choose another video.",
+        )
+        setStatus("Video track duration could not be read.")
+      })
+
+    return () => controller.abort()
   }, [selectedFile])
 
   useEffect(() => {
@@ -153,40 +199,14 @@ export function VideoSelection() {
     setTargetValue(value)
     setStatus(
       targetMode === "duration"
-        ? `Target set to ${value} seconds. Extension has not started.`
-        : `Target set to ${value} boomerang cycles. Extension has not started.`,
+        ? `Target set to ${value} seconds. Boomerang creation has not started.`
+        : `Target set to ${value} boomerang cycles. Boomerang creation has not started.`,
     )
   }
 
-  function handleLoadedMetadata(event: React.SyntheticEvent<HTMLVideoElement>) {
-    const duration = event.currentTarget.duration
-
-    if (!Number.isFinite(duration) || duration <= 0) {
-      handleMetadataError()
-      return
-    }
-
-    setMetadata({ status: "ready", duration })
-    setError(null)
-
-    if (
-      targetMode === "duration" &&
-      targetValue !== null &&
-      !isDurationTargetAvailable(duration, targetValue)
-    ) {
-      setTargetValue(null)
-      setStatus("The previous duration does not extend this video. Choose a longer target.")
-      return
-    }
-
-    setStatus(`Video duration read: ${formatDuration(duration)}.`)
-  }
-
-  function handleMetadataError() {
-    setMetadata({ status: "error" })
-    setTargetValue(null)
-    setError("Brumaire could not read this video's duration. Choose another video.")
-    setStatus("Video duration could not be read.")
+  function handlePreviewError() {
+    setError("Brumaire could not preview this video, but local processing may still be available.")
+    setStatus("Video preview could not be loaded.")
   }
 
   const activeTargetOptions = TARGET_OPTIONS[targetMode]
@@ -199,7 +219,7 @@ export function VideoSelection() {
   const resultFilename =
     selectedFile && plan ? outputFilename(selectedFile.name, plan.target) : null
 
-  async function extendVideo() {
+  async function createBoomerang() {
     if (!selectedFile || !plan || processing) return
 
     const controller = new AbortController()
@@ -207,10 +227,12 @@ export function VideoSelection() {
     setProcessing(true)
     setResult(null)
     setError(null)
-    setStatus("Extending the video locally on this device.")
+    setStatus("Building the boomerang locally on this device.")
 
     try {
-      const nextResult = await remuxVideo(selectedFile, plan, { signal: controller.signal })
+      const nextResult = await createBoomerangVideo(selectedFile, plan, {
+        signal: controller.signal,
+      })
       if (abortRef.current !== controller) return
       setResult(nextResult)
       setStatus(`Video ready. ${formatDuration(nextResult.duration)} created locally.`)
@@ -218,14 +240,14 @@ export function VideoSelection() {
       if (abortRef.current !== controller) return
       if (caught instanceof RemuxError) {
         if (caught.code === "canceled") {
-          setStatus("Extension canceled. The original video is unchanged.")
+          setStatus("Boomerang creation canceled. The original video is unchanged.")
         } else {
           setError(processingErrorMessage(caught.code))
-          setStatus(`Extension failed: ${caught.code}.`)
+          setStatus(`Boomerang creation failed: ${caught.code}.`)
         }
       } else {
-        setError("Brumaire could not extend this video. Try another MP4.")
-        setStatus("Extension failed.")
+        setError("Brumaire could not create this boomerang. Try another MP4.")
+        setStatus("Boomerang creation failed.")
       }
     } finally {
       if (abortRef.current === controller) {
@@ -237,7 +259,7 @@ export function VideoSelection() {
 
   function cancelProcessing() {
     abortRef.current?.abort()
-    setStatus("Canceling the extension…")
+    setStatus("Canceling boomerang creation…")
   }
 
   async function shareResult() {
@@ -322,8 +344,7 @@ export function VideoSelection() {
                       ? `Preview of finished ${resultFilename}`
                       : `Preview of ${selectedFile.name}`
                   }
-                  onLoadedMetadata={result ? undefined : handleLoadedMetadata}
-                  onError={result ? undefined : handleMetadataError}
+                  onError={result ? undefined : handlePreviewError}
                 />
               ) : (
                 <p className="ios-selection-status">Preparing preview…</p>
@@ -469,7 +490,11 @@ export function VideoSelection() {
               <div className="ios-group ios-processing-panel" aria-busy={processing}>
                 <div>
                   <h2 id="processing-title" className="ios-processing-title">
-                    {result ? "Video ready" : processing ? "Extending locally…" : "Ready to extend"}
+                    {result
+                      ? "Video ready"
+                      : processing
+                        ? "Building boomerang locally…"
+                        : "Ready to create"}
                   </h2>
                   <p className="ios-processing-copy">
                     {result
@@ -503,9 +528,9 @@ export function VideoSelection() {
                   <button
                     type="button"
                     className="ios-primary-action"
-                    onClick={() => void extendVideo()}
+                    onClick={() => void createBoomerang()}
                   >
-                    Extend video
+                    Create boomerang
                   </button>
                 )}
               </div>
