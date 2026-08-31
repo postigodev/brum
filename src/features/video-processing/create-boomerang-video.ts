@@ -11,7 +11,7 @@ import {
   VideoSampleSource,
 } from "mediabunny"
 
-import { createExtensionPlan, type ExtensionPlan } from "#/features/video-selection/extension-plan"
+import type { ExtensionPlan } from "#/features/video-selection/extension-plan"
 
 import { createBoomerangTimeline } from "./boomerang-timeline"
 import { RemuxError, throwIfAborted, toRemuxError } from "./errors"
@@ -71,22 +71,13 @@ export async function createBoomerangVideo(
     throwIfAborted(signal)
     assertInputSize(file.size)
     const source = await inspectMedia(file, signal, { discardAudio: true })
-    assertPlanMatchesSource(plan, source.duration)
-
-    // The visual cycle follows the video track, not a longer audio/container tail.
-    const reconciled = createExtensionPlan(source.video.duration, plan.target)
-    if (!reconciled.ok) {
-      throw new RemuxError(
-        "plan-duration-mismatch",
-        "The inspected video duration cannot use the selected target.",
-      )
-    }
+    assertPlanMatchesSource(plan, source.video.duration)
 
     retainedFrames = await decodeVideoFrames(file, signal)
     const timeline = createBoomerangTimeline(
       retainedFrames,
       source.video.duration,
-      reconciled.plan.outputDuration,
+      plan.outputDuration,
     )
 
     const target = new BufferTarget()
@@ -127,7 +118,7 @@ export async function createBoomerangVideo(
     const { output: inspectedOutput, verification } = await verifyBoomerangOutput(
       blob,
       source.video,
-      reconciled.plan.outputDuration,
+      plan.outputDuration,
       signal,
     )
     const { packets: _packets, decoderConfig: _decoderConfig, ...video } = inspectedOutput.video

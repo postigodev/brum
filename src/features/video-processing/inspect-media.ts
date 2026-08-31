@@ -147,6 +147,40 @@ function assertVideoTimeline(
   }
 }
 
+export async function readVideoTrackDuration(blob: Blob, signal?: AbortSignal) {
+  throwIfAborted(signal)
+  const input = new Input({ formats: [MP4], source: new BlobSource(blob) })
+
+  try {
+    if (!(await input.canRead()) || (await input.getFormat()) !== MP4) {
+      throw new RemuxError("invalid-container", "The selected file is not a readable MP4.")
+    }
+
+    const videoTracks = await input.getVideoTracks()
+    if (videoTracks.length !== 1) {
+      throw new RemuxError("unsupported-track-layout", "The MP4 must contain one video track.")
+    }
+
+    const videoTrack = videoTracks[0] as InputVideoTrack
+    if ((await videoTrack.getCodec()) !== "avc") {
+      throw new RemuxError("unsupported-video-codec", "Only H.264 video is supported.")
+    }
+
+    const duration = await videoTrack.computeDuration()
+    throwIfAborted(signal)
+    if (!Number.isFinite(duration) || duration <= 0) {
+      throw new RemuxError("invalid-duration", "The video track duration is invalid.")
+    }
+
+    return duration
+  } catch (error) {
+    if (error instanceof RemuxError) throw error
+    throw toRemuxError(error)
+  } finally {
+    input.dispose()
+  }
+}
+
 export async function inspectMedia(
   blob: Blob,
   signal?: AbortSignal,

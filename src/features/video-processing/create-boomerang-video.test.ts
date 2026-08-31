@@ -5,7 +5,8 @@ import { describe, expect, it } from "vitest"
 import { createExtensionPlan } from "#/features/video-selection/extension-plan"
 
 import { createBoomerangVideo } from "./create-boomerang-video"
-import { inspectMedia } from "./inspect-media"
+import { inspectMedia, readVideoTrackDuration } from "./inspect-media"
+import { assertPlanMatchesSource } from "./packet-schedule"
 
 async function fixture(name: string) {
   const path = fileURLToPath(new URL(`./__fixtures__/${name}`, import.meta.url))
@@ -14,6 +15,23 @@ async function fixture(name: string) {
 }
 
 describe("boomerang video processing", () => {
+  it("plans loop output from the visual track instead of an AAC container tail", async () => {
+    const file = await fixture("h264-aac-short-video.mp4")
+    const source = await inspectMedia(file)
+    const visualDuration = await readVideoTrackDuration(file)
+    const plan = createExtensionPlan(visualDuration, { mode: "loops", value: 2 })
+    if (!plan.ok) throw new Error(plan.reason)
+
+    expect(source.duration).toBeCloseTo(1.001, 3)
+    expect(visualDuration).toBeCloseTo(0.84, 3)
+    expect(plan.plan.sourceDuration).toBeCloseTo(source.video.duration, 10)
+    expect(plan.plan.outputDuration).toBeCloseTo(3.36, 10)
+    expect(() => assertPlanMatchesSource(plan.plan, source.video.duration)).not.toThrow()
+    expect(() => assertPlanMatchesSource(plan.plan, source.duration)).toThrowError(
+      expect.objectContaining({ code: "plan-duration-mismatch" }),
+    )
+  })
+
   it("ignores source AAC because production output is intentionally silent", async () => {
     const source = await inspectMedia(await fixture("h264-aac.mp4"), undefined, {
       discardAudio: true,

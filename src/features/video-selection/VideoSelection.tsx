@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from "react"
 
-import { type BoomerangResult, createBoomerangVideo, RemuxError } from "#/features/video-processing"
+import {
+  type BoomerangResult,
+  createBoomerangVideo,
+  RemuxError,
+  readVideoTrackDuration,
+} from "#/features/video-processing"
 
 import {
   createExtensionPlan,
@@ -51,6 +56,10 @@ export function VideoSelection() {
   const [targetMode, setTargetMode] = useState<TargetMode>("duration")
   const [targetValue, setTargetValue] = useState<number | null>(null)
   const [metadata, setMetadata] = useState<MetadataState>({ status: "loading" })
+  const targetModeRef = useRef(targetMode)
+  const targetValueRef = useRef(targetValue)
+  targetModeRef.current = targetMode
+  targetValueRef.current = targetValue
 
   useEffect(() => {
     if (!selectedFile) {
@@ -62,6 +71,43 @@ export function VideoSelection() {
     setPreviewUrl(objectUrl)
 
     return () => URL.revokeObjectURL(objectUrl)
+  }, [selectedFile])
+
+  useEffect(() => {
+    if (!selectedFile) return
+
+    const controller = new AbortController()
+    void readVideoTrackDuration(selectedFile, controller.signal)
+      .then((duration) => {
+        setMetadata({ status: "ready", duration })
+        setError(null)
+
+        const currentTarget = targetValueRef.current
+        if (
+          targetModeRef.current === "duration" &&
+          currentTarget !== null &&
+          !isDurationTargetAvailable(duration, currentTarget)
+        ) {
+          setTargetValue(null)
+          setStatus("The previous duration does not extend this video. Choose a longer target.")
+          return
+        }
+
+        setStatus(`Video duration read: ${formatDuration(duration)}.`)
+      })
+      .catch((caught: unknown) => {
+        if (controller.signal.aborted) return
+        setMetadata({ status: "error" })
+        setTargetValue(null)
+        setError(
+          caught instanceof RemuxError
+            ? processingErrorMessage(caught.code)
+            : "Brumaire could not read this video's visual duration. Choose another video.",
+        )
+        setStatus("Video track duration could not be read.")
+      })
+
+    return () => controller.abort()
   }, [selectedFile])
 
   useEffect(() => {
@@ -158,35 +204,9 @@ export function VideoSelection() {
     )
   }
 
-  function handleLoadedMetadata(event: React.SyntheticEvent<HTMLVideoElement>) {
-    const duration = event.currentTarget.duration
-
-    if (!Number.isFinite(duration) || duration <= 0) {
-      handleMetadataError()
-      return
-    }
-
-    setMetadata({ status: "ready", duration })
-    setError(null)
-
-    if (
-      targetMode === "duration" &&
-      targetValue !== null &&
-      !isDurationTargetAvailable(duration, targetValue)
-    ) {
-      setTargetValue(null)
-      setStatus("The previous duration does not extend this video. Choose a longer target.")
-      return
-    }
-
-    setStatus(`Video duration read: ${formatDuration(duration)}.`)
-  }
-
-  function handleMetadataError() {
-    setMetadata({ status: "error" })
-    setTargetValue(null)
-    setError("Brumaire could not read this video's duration. Choose another video.")
-    setStatus("Video duration could not be read.")
+  function handlePreviewError() {
+    setError("Brumaire could not preview this video, but local processing may still be available.")
+    setStatus("Video preview could not be loaded.")
   }
 
   const activeTargetOptions = TARGET_OPTIONS[targetMode]
@@ -324,8 +344,7 @@ export function VideoSelection() {
                       ? `Preview of finished ${resultFilename}`
                       : `Preview of ${selectedFile.name}`
                   }
-                  onLoadedMetadata={result ? undefined : handleLoadedMetadata}
-                  onError={result ? undefined : handleMetadataError}
+                  onError={result ? undefined : handlePreviewError}
                 />
               ) : (
                 <p className="ios-selection-status">Preparing preview…</p>
