@@ -16,6 +16,10 @@ const PROCESSING_ERROR_MESSAGES: Record<RemuxErrorCode, string> = {
   "audio-encoder-unavailable": "This browser cannot create compatible AAC audio locally.",
   "unsupported-audio-timeline": "This video's audio timing is not supported yet.",
   "audio-reencode-failed": "Brumaire could not rebuild this video's audio.",
+  "video-decoder-unavailable": "This browser cannot decode this H.264 video locally.",
+  "video-encoder-unavailable": "This browser cannot create H.264 video locally.",
+  "decoded-video-memory-exceeded":
+    "This video needs too much decoded memory to process safely on this device.",
   canceled: "Boomerang creation was canceled.",
   "verification-failed": "Brumaire could not verify the completed video.",
   "remux-failed": "Brumaire could not create this boomerang. Try another MP4.",
