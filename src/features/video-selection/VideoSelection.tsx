@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react"
 import {
   type BoomerangResult,
   createBoomerangVideo,
-  RemuxError,
+  ProcessingError,
   readVideoTrackDuration,
 } from "#/features/video-processing"
 
@@ -100,7 +100,7 @@ export function VideoSelection() {
         setMetadata({ status: "error" })
         setTargetValue(null)
         setError(
-          caught instanceof RemuxError
+          caught instanceof ProcessingError
             ? processingErrorMessage(caught.code)
             : "Brumaire could not read this video's visual duration. Choose another video.",
         )
@@ -238,7 +238,7 @@ export function VideoSelection() {
       setStatus(`Video ready. ${formatDuration(nextResult.duration)} created locally.`)
     } catch (caught) {
       if (abortRef.current !== controller) return
-      if (caught instanceof RemuxError) {
+      if (caught instanceof ProcessingError) {
         if (caught.code === "canceled") {
           setStatus("Boomerang creation canceled. The original video is unchanged.")
         } else {

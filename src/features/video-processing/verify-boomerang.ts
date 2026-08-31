@@ -1,6 +1,6 @@
 import { BlobSource, Input, MP4, VideoSampleSink } from "mediabunny"
 
-import { RemuxError, throwIfAborted } from "./errors"
+import { ProcessingError, throwIfAborted } from "./errors"
 import { inspectMedia } from "./inspect-media"
 import type { BoomerangVerification, MediaInspection, VideoTrackSummary } from "./types"
 
@@ -35,7 +35,7 @@ export function verifyBoomerangInspection(
     Math.abs(output.video.duration - targetDuration) <= OUTPUT_TIMELINE_TOLERANCE_SECONDS
   const codec = output.video.codec === "avc"
   const videoGeometry = sameGeometry(sourceVideo, output.video)
-  const silent = output.audio === null
+  const silent = output.audioTrackCount === 0
   const videoTimeline =
     decodedTimeline.sampleCount > 0 &&
     Math.abs(decodedTimeline.firstTimestamp) <= OUTPUT_TIMELINE_TOLERANCE_SECONDS &&
@@ -53,7 +53,7 @@ export function verifyBoomerangInspection(
       .filter(([, passed]) => !passed)
       .map(([check]) => check)
       .join(", ")
-    throw new RemuxError(
+    throw new ProcessingError(
       "verification-failed",
       `The boomerang MP4 failed verification: ${failedChecks}.`,
     )
@@ -79,7 +79,7 @@ async function inspectDecodedVideoTimeline(blob: Blob, signal?: AbortSignal) {
     const tracks = await input.getVideoTracks()
     const track = tracks[0]
     if (!track || tracks.length !== 1) {
-      throw new RemuxError("verification-failed", "The output video track is missing.")
+      throw new ProcessingError("verification-failed", "The output video track is missing.")
     }
 
     const sink = new VideoSampleSink(track)

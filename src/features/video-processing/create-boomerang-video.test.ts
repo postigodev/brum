@@ -6,7 +6,7 @@ import { createExtensionPlan } from "#/features/video-selection/extension-plan"
 
 import { createBoomerangVideo } from "./create-boomerang-video"
 import { inspectMedia, readVideoTrackDuration } from "./inspect-media"
-import { assertPlanMatchesSource } from "./packet-schedule"
+import { assertPlanMatchesSource } from "./processing-validation"
 
 async function fixture(name: string) {
   const path = fileURLToPath(new URL(`./__fixtures__/${name}`, import.meta.url))
@@ -23,6 +23,7 @@ describe("boomerang video processing", () => {
     if (!plan.ok) throw new Error(plan.reason)
 
     expect(source.duration).toBeCloseTo(1.001, 3)
+    expect(source.audioTrackCount).toBe(1)
     expect(visualDuration).toBeCloseTo(0.84, 3)
     expect(plan.plan.sourceDuration).toBeCloseTo(source.video.duration, 10)
     expect(plan.plan.outputDuration).toBeCloseTo(3.36, 10)
@@ -32,18 +33,10 @@ describe("boomerang video processing", () => {
     )
   })
 
-  it("ignores source AAC because production output is intentionally silent", async () => {
-    const source = await inspectMedia(await fixture("h264-aac.mp4"), undefined, {
-      discardAudio: true,
-    })
-
-    expect(source.audio).toBeNull()
-  })
-
   it("stops before decoding when canceled", async () => {
     const file = await fixture("h264-video.mp4")
     const source = await inspectMedia(file)
-    const plan = createExtensionPlan(source.duration, { mode: "loops", value: 2 })
+    const plan = createExtensionPlan(source.video.duration, { mode: "loops", value: 2 })
     if (!plan.ok) throw new Error(plan.reason)
 
     const controller = new AbortController()

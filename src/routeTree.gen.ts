@@ -12,7 +12,6 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as ToolRouteImport } from './routes/tool'
-import { Route as _spikeRemuxRouteImport } from './routes/[_][_]spike.remux'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -29,44 +28,35 @@ const ToolRoute = ToolRouteImport.update({
   path: '/tool',
   getParentRoute: () => rootRouteImport,
 } as any)
-const _spikeRemuxRoute = _spikeRemuxRouteImport.update({
-  id: '/__spike/remux',
-  path: '/__spike/remux',
-  getParentRoute: () => rootRouteImport,
-} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/privacy': typeof PrivacyRoute
   '/tool': typeof ToolRoute
-  '/__spike/remux': typeof _spikeRemuxRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/privacy': typeof PrivacyRoute
   '/tool': typeof ToolRoute
-  '/__spike/remux': typeof _spikeRemuxRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/privacy': typeof PrivacyRoute
   '/tool': typeof ToolRoute
-  '/__spike/remux': typeof _spikeRemuxRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/privacy' | '/tool' | '/__spike/remux'
+  fullPaths: '/' | '/privacy' | '/tool'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/privacy' | '/tool' | '/__spike/remux'
-  id: '__root__' | '/' | '/privacy' | '/tool' | '/__spike/remux'
+  to: '/' | '/privacy' | '/tool'
+  id: '__root__' | '/' | '/privacy' | '/tool'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   PrivacyRoute: typeof PrivacyRoute
   ToolRoute: typeof ToolRoute
-  _spikeRemuxRoute: typeof _spikeRemuxRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -92,13 +82,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ToolRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/__spike/remux': {
-      id: '/__spike/remux'
-      path: '/__spike/remux'
-      fullPath: '/__spike/remux'
-      preLoaderRoute: typeof _spikeRemuxRouteImport
-      parentRoute: typeof rootRouteImport
-    }
   }
 }
 
@@ -106,7 +89,6 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   PrivacyRoute: PrivacyRoute,
   ToolRoute: ToolRoute,
-  _spikeRemuxRoute: _spikeRemuxRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

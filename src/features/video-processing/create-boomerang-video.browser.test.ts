@@ -6,7 +6,7 @@ import audioFixtureUrl from "./__fixtures__/h264-aac.mp4?url"
 import directionalFixtureUrl from "./__fixtures__/h264-directional.mp4?url"
 import { createBoomerangVideo } from "./create-boomerang-video"
 import { readVideoTrackDuration } from "./inspect-media"
-import { TIMELINE_TOLERANCE_SECONDS } from "./packet-schedule"
+import { TIMELINE_TOLERANCE_SECONDS } from "./processing-validation"
 
 const MAX_STATE_COLOR_DISTANCE_SQUARED = 25_000
 const STATE_COLORS = {

@@ -1,13 +1,13 @@
 import type { VideoSample } from "mediabunny"
 
-import { RemuxError, throwIfAborted } from "./errors"
+import { ProcessingError, throwIfAborted } from "./errors"
 
 export const MAX_RETAINED_DECODED_VIDEO_BYTES = 256 * 1024 * 1024
 
 type RetainableVideoSample = Pick<VideoSample, "codedWidth" | "codedHeight" | "close">
 
 function memoryError() {
-  return new RemuxError(
+  return new ProcessingError(
     "decoded-video-memory-exceeded",
     "The decoded video exceeds the safe local memory budget.",
   )
