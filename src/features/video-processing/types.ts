@@ -73,6 +73,14 @@ export type RemuxVerification = {
   packetLedger: true
 }
 
+export type BoomerangVerification = {
+  duration: true
+  codec: true
+  videoGeometry: true
+  silent: true
+  videoTimeline: true
+}
+
 export type RemuxResult = {
   blob: Blob
   duration: number
@@ -82,6 +90,14 @@ export type RemuxResult = {
   audioMode: AudioMode
   audioBitrate: number | null
   verification: RemuxVerification
+}
+
+export type BoomerangResult = {
+  blob: Blob
+  duration: number
+  byteSize: number
+  video: Omit<VideoTrackSummary, "packets" | "decoderConfig">
+  verification: BoomerangVerification
 }
 
 export type RemuxOptions = { signal?: AbortSignal }

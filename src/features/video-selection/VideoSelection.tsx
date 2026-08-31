@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 
-import { RemuxError, type RemuxResult, remuxVideo } from "#/features/video-processing"
+import { type BoomerangResult, createBoomerangVideo, RemuxError } from "#/features/video-processing"
 
 import {
   createExtensionPlan,
@@ -42,7 +42,7 @@ export function VideoSelection() {
   const abortRef = useRef<AbortController | null>(null)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
-  const [result, setResult] = useState<RemuxResult | null>(null)
+  const [result, setResult] = useState<BoomerangResult | null>(null)
   const [resultUrl, setResultUrl] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [status, setStatus] = useState("No video selected.")
@@ -153,8 +153,8 @@ export function VideoSelection() {
     setTargetValue(value)
     setStatus(
       targetMode === "duration"
-        ? `Target set to ${value} seconds. Extension has not started.`
-        : `Target set to ${value} boomerang cycles. Extension has not started.`,
+        ? `Target set to ${value} seconds. Boomerang creation has not started.`
+        : `Target set to ${value} boomerang cycles. Boomerang creation has not started.`,
     )
   }
 
@@ -199,7 +199,7 @@ export function VideoSelection() {
   const resultFilename =
     selectedFile && plan ? outputFilename(selectedFile.name, plan.target) : null
 
-  async function extendVideo() {
+  async function createBoomerang() {
     if (!selectedFile || !plan || processing) return
 
     const controller = new AbortController()
@@ -207,10 +207,12 @@ export function VideoSelection() {
     setProcessing(true)
     setResult(null)
     setError(null)
-    setStatus("Extending the video locally on this device.")
+    setStatus("Building the boomerang locally on this device.")
 
     try {
-      const nextResult = await remuxVideo(selectedFile, plan, { signal: controller.signal })
+      const nextResult = await createBoomerangVideo(selectedFile, plan, {
+        signal: controller.signal,
+      })
       if (abortRef.current !== controller) return
       setResult(nextResult)
       setStatus(`Video ready. ${formatDuration(nextResult.duration)} created locally.`)
@@ -218,14 +220,14 @@ export function VideoSelection() {
       if (abortRef.current !== controller) return
       if (caught instanceof RemuxError) {
         if (caught.code === "canceled") {
-          setStatus("Extension canceled. The original video is unchanged.")
+          setStatus("Boomerang creation canceled. The original video is unchanged.")
         } else {
           setError(processingErrorMessage(caught.code))
-          setStatus(`Extension failed: ${caught.code}.`)
+          setStatus(`Boomerang creation failed: ${caught.code}.`)
         }
       } else {
-        setError("Brumaire could not extend this video. Try another MP4.")
-        setStatus("Extension failed.")
+        setError("Brumaire could not create this boomerang. Try another MP4.")
+        setStatus("Boomerang creation failed.")
       }
     } finally {
       if (abortRef.current === controller) {
@@ -237,7 +239,7 @@ export function VideoSelection() {
 
   function cancelProcessing() {
     abortRef.current?.abort()
-    setStatus("Canceling the extension…")
+    setStatus("Canceling boomerang creation…")
   }
 
   async function shareResult() {
@@ -469,7 +471,11 @@ export function VideoSelection() {
               <div className="ios-group ios-processing-panel" aria-busy={processing}>
                 <div>
                   <h2 id="processing-title" className="ios-processing-title">
-                    {result ? "Video ready" : processing ? "Extending locally…" : "Ready to extend"}
+                    {result
+                      ? "Video ready"
+                      : processing
+                        ? "Building boomerang locally…"
+                        : "Ready to create"}
                   </h2>
                   <p className="ios-processing-copy">
                     {result
@@ -503,9 +509,9 @@ export function VideoSelection() {
                   <button
                     type="button"
                     className="ios-primary-action"
-                    onClick={() => void extendVideo()}
+                    onClick={() => void createBoomerang()}
                   >
-                    Extend video
+                    Create boomerang
                   </button>
                 )}
               </div>
