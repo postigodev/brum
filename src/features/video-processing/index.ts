@@ -1,11 +1,8 @@
 export { createBoomerangVideo } from "./create-boomerang-video"
-export { RemuxError, type RemuxErrorCode } from "./errors"
-export { inspectMedia, readVideoTrackDuration } from "./inspect-media"
-export { remuxVideo } from "./remux-video"
+export { ProcessingError, type ProcessingErrorCode } from "./errors"
+export { readVideoTrackDuration } from "./inspect-media"
 export type {
   BoomerangResult,
   BoomerangVerification,
-  MediaInspection,
-  RemuxResult,
-  RemuxVerification,
+  ProcessingOptions,
 } from "./types"

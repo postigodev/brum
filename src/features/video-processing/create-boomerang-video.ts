@@ -14,11 +14,11 @@ import type { ExtensionPlan } from "#/features/video-selection/extension-plan"
 
 import { createBoomerangTimeline } from "./boomerang-timeline"
 import { collectDecodedVideoSamples } from "./decoded-video-buffer"
-import { RemuxError, throwIfAborted, toRemuxError } from "./errors"
+import { ProcessingError, throwIfAborted, toProcessingError } from "./errors"
 import { inspectMedia } from "./inspect-media"
 import { assertActualOutputSize, assertInputSize } from "./limits"
-import { assertPlanMatchesSource } from "./packet-schedule"
-import type { BoomerangResult, RemuxOptions } from "./types"
+import { assertPlanMatchesSource } from "./processing-validation"
+import type { BoomerangResult, ProcessingOptions } from "./types"
 import { verifyBoomerangOutput } from "./verify-boomerang"
 import {
   type AvcEncodingConfig,
@@ -40,7 +40,9 @@ async function decodeVideoFrames(
     throwIfAborted(signal)
     const videoTracks = await input.getVideoTracks()
     const videoTrack = videoTracks[0]
-    if (!videoTrack) throw new RemuxError("unsupported-track-layout", "The MP4 has no video track.")
+    if (!videoTrack) {
+      throw new ProcessingError("unsupported-track-layout", "The MP4 has no video track.")
+    }
 
     await assertVideoDecoderAvailable(videoTrack)
     await assertAvcEncoderAvailable(encodingConfig, codedWidth, codedHeight)
@@ -49,7 +51,10 @@ async function decodeVideoFrames(
     const frames = await collectDecodedVideoSamples(sink.samples(), signal)
 
     if (frames.length === 0) {
-      throw new RemuxError("unsupported-timeline", "The video track contains no decoded frames.")
+      throw new ProcessingError(
+        "unsupported-timeline",
+        "The video track contains no decoded frames.",
+      )
     }
     return frames
   } finally {
@@ -57,15 +62,14 @@ async function decodeVideoFrames(
   }
 }
 
-function sourceVideoBitrate(packets: readonly { data: Uint8Array }[], sourceDuration: number) {
-  const bytes = packets.reduce((total, packet) => total + packet.data.byteLength, 0)
-  return Math.max(100_000, Math.round((bytes * 8) / sourceDuration))
+function sourceVideoBitrate(encodedByteLength: number, sourceDuration: number) {
+  return Math.max(100_000, Math.round((encodedByteLength * 8) / sourceDuration))
 }
 
 export async function createBoomerangVideo(
   file: File,
   plan: ExtensionPlan,
-  options: RemuxOptions = {},
+  options: ProcessingOptions = {},
 ): Promise<BoomerangResult> {
   const { signal } = options
   let output: Output<Mp4OutputFormat, BufferTarget> | null = null
@@ -74,11 +78,11 @@ export async function createBoomerangVideo(
   try {
     throwIfAborted(signal)
     assertInputSize(file.size)
-    const source = await inspectMedia(file, signal, { discardAudio: true })
+    const source = await inspectMedia(file, signal)
     assertPlanMatchesSource(plan, source.video.duration)
 
     const encodingConfig = createAvcEncodingConfig(
-      sourceVideoBitrate(source.video.packets, source.video.duration),
+      sourceVideoBitrate(source.video.encodedByteLength, source.video.duration),
     )
     retainedFrames = await decodeVideoFrames(
       file,
@@ -129,7 +133,7 @@ export async function createBoomerangVideo(
       plan.outputDuration,
       signal,
     )
-    const { packets: _packets, decoderConfig: _decoderConfig, ...video } = inspectedOutput.video
+    const { encodedByteLength: _encodedByteLength, ...video } = inspectedOutput.video
 
     return {
       blob,
@@ -142,7 +146,7 @@ export async function createBoomerangVideo(
     if (output && output.state !== "finalized" && output.state !== "canceled") {
       await output.cancel().catch(() => undefined)
     }
-    throw toRemuxError(error)
+    throw toProcessingError(error)
   } finally {
     for (const frame of retainedFrames) frame.close()
   }

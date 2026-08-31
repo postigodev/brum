@@ -4,12 +4,10 @@ import { outputFilename, processingErrorMessage } from "./processing-ui"
 
 describe("processing UI contracts", () => {
   it("maps technical capability failures to user-facing copy", () => {
-    expect(processingErrorMessage("audio-decoder-unavailable")).toBe(
-      "This browser cannot process this video's audio locally.",
-    )
     expect(processingErrorMessage("video-decoder-unavailable")).toContain("cannot decode")
     expect(processingErrorMessage("video-encoder-unavailable")).toContain("cannot create")
     expect(processingErrorMessage("decoded-video-memory-exceeded")).toContain("decoded memory")
+    expect(processingErrorMessage("processing-failed")).toContain("could not create")
   })
 
   it("creates a safe duration output filename", () => {
