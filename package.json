@@ -16,7 +16,7 @@
     "preview": "vite preview",
     "test": "vitest run --exclude '**/*.browser.test.ts'",
     "test:browser": "vitest run --config vitest.browser.config.ts",
-    "test:watch": "vitest",
+    "test:watch": "vitest --exclude '**/*.browser.test.ts'",
     "typecheck": "tsc --noEmit",
     "lint": "biome lint .",
     "format": "biome format --write .",

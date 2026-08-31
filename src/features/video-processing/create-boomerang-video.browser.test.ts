@@ -2,6 +2,7 @@ import { BlobSource, Input, MP4, VideoSampleSink } from "mediabunny"
 import { describe, expect, it } from "vitest"
 
 import { createExtensionPlan, type ExtensionTarget } from "../video-selection/extension-plan"
+import audioFixtureUrl from "./__fixtures__/h264-aac.mp4?url"
 import directionalFixtureUrl from "./__fixtures__/h264-directional.mp4?url"
 import { createBoomerangVideo } from "./create-boomerang-video"
 import { readVideoTrackDuration } from "./inspect-media"
@@ -33,9 +34,9 @@ function classifyState(red: number, green: number, blue: number): State {
   return nearest.state
 }
 
-async function fixture() {
-  const response = await fetch(directionalFixtureUrl)
-  return new File([await response.blob()], "h264-directional.mp4", { type: "video/mp4" })
+async function fixture(url: string, name: string) {
+  const response = await fetch(url)
+  return new File([await response.blob()], name, { type: "video/mp4" })
 }
 
 async function decodeStates(blob: Blob) {
@@ -74,14 +75,28 @@ async function decodeStates(blob: Blob) {
   }
 }
 
-async function createAndDecode(target: ExtensionTarget) {
-  const source = await fixture()
+async function createOutput(source: File, target: ExtensionTarget) {
   const sourceDuration = await readVideoTrackDuration(source)
   const plan = createExtensionPlan(sourceDuration, target)
   if (!plan.ok) throw new Error(plan.reason)
 
   const result = await createBoomerangVideo(source, plan.plan)
-  return { decoded: await decodeStates(result.blob), outputDuration: plan.plan.outputDuration }
+  return { result, outputDuration: plan.plan.outputDuration }
+}
+
+async function createAndDecode(target: ExtensionTarget) {
+  const source = await fixture(directionalFixtureUrl, "h264-directional.mp4")
+  const { result, outputDuration } = await createOutput(source, target)
+  return { decoded: await decodeStates(result.blob), outputDuration }
+}
+
+async function countAudioTracks(blob: Blob) {
+  const input = new Input({ formats: [MP4], source: new BlobSource(blob) })
+  try {
+    return (await input.getAudioTracks()).length
+  } finally {
+    input.dispose()
+  }
 }
 
 function expectExactDuration(actual: number, expected: number) {
@@ -112,5 +127,12 @@ describe("generated boomerang playback", () => {
     const cycle = ["A", "B", "C", "D", "D", "C", "B", "A"]
     expect(decoded.states).toEqual([...cycle, ...cycle, ...cycle, "A", "B", "C", "D", "D", "C"])
     expectExactDuration(decoded.duration, outputDuration)
+  })
+
+  it("discards source AAC from the generated output", async () => {
+    const source = await fixture(audioFixtureUrl, "h264-aac.mp4")
+    const { result } = await createOutput(source, { mode: "loops", value: 2 })
+
+    expect(await countAudioTracks(result.blob)).toBe(0)
   })
 })
