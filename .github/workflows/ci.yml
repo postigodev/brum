@@ -40,6 +40,12 @@ jobs:
       - name: Test
         run: pnpm test
 
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Test boomerang playback
+        run: pnpm test:browser
+
       - name: Typecheck
         run: pnpm typecheck
 
