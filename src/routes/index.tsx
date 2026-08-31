@@ -8,7 +8,7 @@ function HomePage() {
       <section aria-labelledby="home-title">
         <p className="ios-eyebrow">Short loop, longer story</p>
         <h1 id="home-title" className="ios-page-title ios-home-title">
-          Brumaire
+          Brum
         </h1>
         <p className="ios-body-copy ios-home-copy">
           A focused tool in development for extending short videos and Boomerangs to the length your
@@ -30,7 +30,7 @@ function HomePage() {
         <div>
           <p className="ios-local-note-title">Designed to stay local</p>
           <p className="ios-local-note-copy">
-            Brumaire is intended to process video on your device, without sending the file to a
+            Brum processes video on your device, without sending the file to a
             server.
           </p>
         </div>

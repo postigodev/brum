@@ -34,7 +34,7 @@ function ToolPage() {
         <div>
           <p className="ios-local-note-title">Designed to stay local</p>
           <p className="ios-local-note-copy">
-            Brumaire is intended to process video on your device, without sending the file to a
+            Brum processes video on your device, without sending the file to a
             server.
           </p>
         </div>

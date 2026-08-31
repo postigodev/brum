@@ -102,7 +102,7 @@ export function VideoSelection() {
         setError(
           caught instanceof ProcessingError
             ? processingErrorMessage(caught.code)
-            : "Brumaire could not read this video's visual duration. Choose another video.",
+            : "Brum could not read this video's visual duration. Choose another video.",
         )
         setStatus("Video track duration could not be read.")
       })
@@ -205,7 +205,7 @@ export function VideoSelection() {
   }
 
   function handlePreviewError() {
-    setError("Brumaire could not preview this video, but local processing may still be available.")
+    setError("Brum could not preview this video, but local processing may still be available.")
     setStatus("Video preview could not be loaded.")
   }
 
@@ -246,7 +246,7 @@ export function VideoSelection() {
           setStatus(`Boomerang creation failed: ${caught.code}.`)
         }
       } else {
-        setError("Brumaire could not create this boomerang. Try another MP4.")
+        setError("Brum could not create this boomerang. Try another MP4.")
         setStatus("Boomerang creation failed.")
       }
     } finally {
@@ -266,7 +266,7 @@ export function VideoSelection() {
     if (!result || !resultFilename || !navigator.share) return
 
     const outputFile = new File([result.blob], resultFilename, { type: "video/mp4" })
-    const shareData: ShareData = { files: [outputFile], title: "Brumaire video" }
+    const shareData: ShareData = { files: [outputFile], title: "Brum video" }
     if (navigator.canShare && !navigator.canShare(shareData)) {
       setError("This browser cannot share the finished file. Save it instead.")
       return
@@ -295,7 +295,7 @@ export function VideoSelection() {
     }
 
     if (metadata.status === "error") {
-      return "Choose another video so Brumaire can calculate an extension plan."
+      return "Choose another video so Brum can calculate a boomerang plan."
     }
 
     if (!plan) {
@@ -500,7 +500,7 @@ export function VideoSelection() {
                     {result
                       ? "The finished MP4 is ready to preview, save, or share."
                       : processing
-                        ? "Keep Brumaire open while it builds and verifies the new file."
+                        ? "Keep Brum open while it builds and verifies the new file."
                         : "Processing stays in this browser. Your video is not uploaded."}
                   </p>
                 </div>

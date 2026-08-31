@@ -12,11 +12,11 @@ describe("processing UI contracts", () => {
 
   it("creates a safe duration output filename", () => {
     expect(outputFilename("My Boomerang #1.MOV", { mode: "duration", value: 15 })).toBe(
-      "My-Boomerang-1-brumaire-15s.mp4",
+      "My-Boomerang-1-brum-15s.mp4",
     )
   })
 
   it("creates a loop output filename without trusting the source name", () => {
-    expect(outputFilename("💀.mp4", { mode: "loops", value: 3 })).toBe("video-brumaire-3x.mp4")
+    expect(outputFilename("💀.mp4", { mode: "loops", value: 3 })).toBe("video-brum-3x.mp4")
   })
 })

@@ -16,11 +16,11 @@ function PrivacyPage() {
 
         <div className="ios-group ios-privacy-group">
           <p className="ios-privacy-row">
-            Brumaire is designed around local, on-device video processing. This initial application
+            Brum is designed around local, on-device video processing. This application
             foundation does not process videos yet.
           </p>
           <p className="ios-privacy-row">
-            Brumaire currently has no account system and does not intentionally upload video files
+            Brum has no account system and does not intentionally upload video files
             to a server.
           </p>
           <p className="ios-privacy-row ios-privacy-row-muted">

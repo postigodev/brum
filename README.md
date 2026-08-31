@@ -1,12 +1,12 @@
 <p align="center">
-  <img src="docs/assets/brum-wordmark.png" alt="Brumaire" width="360">
+  <img src="docs/assets/brum-wordmark.png" alt="Brum" width="360">
 </p>
 
 <p align="center">
   Create forward/reverse boomerang videos to an exact duration, entirely in your browser.
 </p>
 
-Brumaire is a mobile-first utility for turning a short video into a forward/reverse boomerang MP4
+Brum is a mobile-first utility for turning a short video into a forward/reverse boomerang MP4
 suitable for an Instagram Story. Select a file, choose a duration or number of boomerang cycles,
 process it locally, then save or share the result. One cycle is the source motion forward and then
 backward.
@@ -20,7 +20,7 @@ The core MVP workflow is available at `/tool`:
 - Preview and download the generated MP4.
 - Share the result when the browser supports sharing local files.
 
-Processing happens on-device. Brumaire has no accounts, backend video-processing service, or
+Processing happens on-device. Brum has no accounts, backend video-processing service, or
 intentional video uploads.
 
 > [!IMPORTANT]
@@ -31,13 +31,13 @@ intentional video uploads.
 
 ## How it works
 
-Brumaire inspects the visual track, checks browser AVC decode/encode support, decodes video frames
+Brum inspects the visual track, checks browser AVC decode/encode support, decodes video frames
 in presentation order, and emits each cycle forward and then backward. The timeline is re-encoded
 as AVC/H.264 and muxed into a silent MP4, all locally in the browser; source media is never uploaded.
 Exact-duration targets trim the final emitted frame when necessary, while cycle timing always comes
 from the video track rather than a longer container or audio tail.
 
-Before retaining decoded frames, Brumaire enforces a 256 MiB decoded-video budget. It also validates
+Before retaining decoded frames, Brum enforces a 256 MiB decoded-video budget. It also validates
 the readable output, duration, codec, geometry, silence, and continuous decoded timeline. CI runs a
 Chromium regression that decodes generated output and verifies `A B C D D C B A` playback.
 
