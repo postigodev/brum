@@ -20,7 +20,7 @@ import {
 } from "./decoded-video-buffer"
 import { ProcessingError, throwIfAborted, toProcessingError } from "./errors"
 import { inspectMedia } from "./inspect-media"
-import { assertActualOutputSize, assertInputSize } from "./limits"
+import { assertActualOutputSize, assertEstimatedOutputSize, assertInputSize } from "./limits"
 import { waitForMediaCleanup, waitForMediaOperation } from "./media-operation"
 import { assertPlanMatchesSource } from "./processing-validation"
 import type { BoomerangResult, ProcessingOptions } from "./types"
@@ -103,9 +103,12 @@ export async function createBoomerangVideo(
     const source = await inspectMedia(file, signal)
     assertPlanMatchesSource(plan, source.video.duration)
 
-    const encodingConfig = createAvcEncodingConfig(
-      sourceVideoBitrate(source.video.encodedByteLength, source.video.duration),
+    const encodingBitrate = sourceVideoBitrate(
+      source.video.encodedByteLength,
+      source.video.duration,
     )
+    assertEstimatedOutputSize(encodingBitrate, plan.outputDuration)
+    const encodingConfig = createAvcEncodingConfig(encodingBitrate)
     retainedFrames = await decodeVideoFrames(
       file,
       encodingConfig,
