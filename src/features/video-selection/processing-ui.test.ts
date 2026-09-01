@@ -7,6 +7,7 @@ describe("processing UI contracts", () => {
     expect(processingErrorMessage("video-decoder-unavailable")).toContain("cannot decode")
     expect(processingErrorMessage("video-encoder-unavailable")).toContain("cannot create")
     expect(processingErrorMessage("decoded-video-memory-exceeded")).toContain("decoded memory")
+    expect(processingErrorMessage("media-stalled")).toContain("stopped responding")
     expect(processingErrorMessage("processing-failed")).toContain("could not create")
   })
 

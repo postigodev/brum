@@ -2,6 +2,7 @@ import { BlobSource, Input, MP4, VideoSampleSink } from "mediabunny"
 
 import { ProcessingError, throwIfAborted } from "./errors"
 import { inspectMedia } from "./inspect-media"
+import { waitForMediaCleanup, waitForMediaOperation } from "./media-operation"
 import type { BoomerangVerification, MediaInspection, VideoTrackSummary } from "./types"
 
 const OUTPUT_TIMELINE_TOLERANCE_SECONDS = 0.001
@@ -83,21 +84,39 @@ async function inspectDecodedVideoTimeline(blob: Blob, signal?: AbortSignal) {
     }
 
     const sink = new VideoSampleSink(track)
-    for await (const sample of sink.samples()) {
-      try {
-        throwIfAborted(signal)
-        if (firstTimestamp === null) {
-          firstTimestamp = sample.timestamp
-        } else if (
-          endTimestamp !== null &&
-          Math.abs(sample.timestamp - endTimestamp) > OUTPUT_TIMELINE_TOLERANCE_SECONDS
-        ) {
-          continuous = false
+    const iterator = sink.samples()[Symbol.asyncIterator]()
+    let iterationCompleted = false
+    try {
+      while (true) {
+        const next = await waitForMediaOperation(iterator.next(), {
+          signal,
+          onInterrupt: () => input.dispose(),
+        })
+        if (next.done) {
+          iterationCompleted = true
+          break
         }
-        endTimestamp = sample.timestamp + sample.duration
-        sampleCount += 1
-      } finally {
-        sample.close()
+
+        const sample = next.value
+        try {
+          throwIfAborted(signal)
+          if (firstTimestamp === null) {
+            firstTimestamp = sample.timestamp
+          } else if (
+            endTimestamp !== null &&
+            Math.abs(sample.timestamp - endTimestamp) > OUTPUT_TIMELINE_TOLERANCE_SECONDS
+          ) {
+            continuous = false
+          }
+          endTimestamp = sample.timestamp + sample.duration
+          sampleCount += 1
+        } finally {
+          sample.close()
+        }
+      }
+    } finally {
+      if (!iterationCompleted && iterator.return) {
+        await waitForMediaCleanup(iterator.return())
       }
     }
   } finally {

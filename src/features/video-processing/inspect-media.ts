@@ -8,6 +8,7 @@ import {
 } from "mediabunny"
 
 import { ProcessingError, throwIfAborted, toProcessingError } from "./errors"
+import { waitForMediaCleanup, waitForMediaOperation } from "./media-operation"
 import { TIMELINE_TOLERANCE_SECONDS } from "./processing-validation"
 import type { MediaInspection, VideoTrackSummary } from "./types"
 
@@ -22,16 +23,35 @@ export function assertInitialKeyPacket(type: PacketType | null) {
   }
 }
 
-async function inspectVideoPackets(track: InputVideoTrack, signal?: AbortSignal) {
+async function inspectVideoPackets(
+  track: InputVideoTrack,
+  signal?: AbortSignal,
+  onInterrupt?: () => void,
+) {
   const sink = new EncodedPacketSink(track)
   let encodedByteLength = 0
   let packetCount = 0
+  const iterator = sink
+    .packets(undefined, undefined, { verifyKeyPackets: true })
+    [Symbol.asyncIterator]()
+  let iterationCompleted = false
 
-  for await (const packet of sink.packets(undefined, undefined, { verifyKeyPackets: true })) {
-    throwIfAborted(signal)
-    if (packetCount === 0) assertInitialKeyPacket(packet.type)
-    encodedByteLength += packet.data.byteLength
-    packetCount += 1
+  try {
+    while (true) {
+      const next = await waitForMediaOperation(iterator.next(), { signal, onInterrupt })
+      if (next.done) {
+        iterationCompleted = true
+        break
+      }
+
+      if (packetCount === 0) assertInitialKeyPacket(next.value.type)
+      encodedByteLength += next.value.data.byteLength
+      packetCount += 1
+    }
+  } finally {
+    if (!iterationCompleted && iterator.return) {
+      await waitForMediaCleanup(iterator.return())
+    }
   }
 
   if (packetCount === 0) assertInitialKeyPacket(null)
@@ -43,6 +63,7 @@ async function inspectVideo(
   track: InputVideoTrack,
   duration: number,
   signal?: AbortSignal,
+  onInterrupt?: () => void,
 ): Promise<VideoTrackSummary> {
   const codec = await track.getCodec()
   if (codec !== "avc") {
@@ -55,7 +76,7 @@ async function inspectVideo(
     throw new ProcessingError("unsupported-video-codec", "The H.264 configuration is incomplete.")
   }
 
-  const encodedByteLength = await inspectVideoPackets(track, signal)
+  const encodedByteLength = await inspectVideoPackets(track, signal, onInterrupt)
   return {
     kind: "video",
     codec,
@@ -179,7 +200,7 @@ export async function inspectMedia(blob: Blob, signal?: AbortSignal): Promise<Me
       videoTrack.computeDuration(),
     ])
     throwIfAborted(signal)
-    const video = await inspectVideo(videoTrack, videoDuration, signal)
+    const video = await inspectVideo(videoTrack, videoDuration, signal, () => input.dispose())
     assertVideoTimeline(videoFirstTimestamp, videoDuration, duration, audioTracks.length > 0)
 
     return { duration, video, audioTrackCount: audioTracks.length }

@@ -5,7 +5,6 @@ import {
   MP4,
   Mp4OutputFormat,
   Output,
-  type VideoSample,
   VideoSampleSink,
   VideoSampleSource,
 } from "mediabunny"
@@ -13,10 +12,16 @@ import {
 import type { ExtensionPlan } from "#/features/video-selection/extension-plan"
 
 import { createBoomerangTimeline } from "./boomerang-timeline"
-import { collectDecodedVideoSamples } from "./decoded-video-buffer"
+import {
+  collectDecodedVideoSamples,
+  emitRetainedVideoFrame,
+  type RetainedVideoFrame,
+  releaseRetainedVideoFrames,
+} from "./decoded-video-buffer"
 import { ProcessingError, throwIfAborted, toProcessingError } from "./errors"
 import { inspectMedia } from "./inspect-media"
 import { assertActualOutputSize, assertInputSize } from "./limits"
+import { waitForMediaCleanup, waitForMediaOperation } from "./media-operation"
 import { assertPlanMatchesSource } from "./processing-validation"
 import type { BoomerangResult, ProcessingOptions } from "./types"
 import { verifyBoomerangOutput } from "./verify-boomerang"
@@ -48,7 +53,10 @@ async function decodeVideoFrames(
     await assertAvcEncoderAvailable(encodingConfig, codedWidth, codedHeight)
     throwIfAborted(signal)
     const sink = new VideoSampleSink(videoTrack)
-    const frames = await collectDecodedVideoSamples(sink.samples(), signal)
+    const frames = await collectDecodedVideoSamples(sink.samples(), {
+      signal,
+      onInterrupt: () => input.dispose(),
+    })
 
     if (frames.length === 0) {
       throw new ProcessingError(
@@ -73,7 +81,21 @@ export async function createBoomerangVideo(
 ): Promise<BoomerangResult> {
   const { signal } = options
   let output: Output<Mp4OutputFormat, BufferTarget> | null = null
-  let retainedFrames: VideoSample[] = []
+  let outputCancellation: Promise<void> | null = null
+  let retainedFrames: RetainedVideoFrame[] = []
+
+  function cancelActiveOutput() {
+    if (!output) return outputCancellation
+    if (output.state === "finalized") return outputCancellation
+    if (!outputCancellation) {
+      outputCancellation = output.cancel().catch(() => undefined)
+    }
+    return outputCancellation
+  }
+
+  function interruptActiveOutput() {
+    void cancelActiveOutput()
+  }
 
   try {
     throwIfAborted(signal)
@@ -101,26 +123,31 @@ export async function createBoomerangVideo(
     output = new Output({ format: new Mp4OutputFormat({ fastStart: "in-memory" }), target })
     const videoSource = new VideoSampleSource(encodingConfig)
     output.addVideoTrack(videoSource, { rotation: source.video.rotation })
-    await output.start()
+    await waitForMediaOperation(output.start(), {
+      signal,
+      onInterrupt: interruptActiveOutput,
+    })
 
     for (const entry of timeline) {
       throwIfAborted(signal)
       const sourceFrame = retainedFrames[entry.sourceIndex]
       if (!sourceFrame) throw new Error("Boomerang timeline referenced an unknown source frame.")
 
-      const emitted = sourceFrame.clone()
-      try {
-        emitted.setTimestamp(entry.timestamp)
-        emitted.setDuration(entry.duration)
-        await videoSource.add(emitted)
-      } finally {
-        emitted.close()
-      }
+      await emitRetainedVideoFrame(
+        sourceFrame,
+        entry.timestamp,
+        entry.duration,
+        (emitted) => videoSource.add(emitted),
+        { signal, onInterrupt: interruptActiveOutput },
+      )
     }
 
     videoSource.close()
     throwIfAborted(signal)
-    await output.finalize()
+    await waitForMediaOperation(output.finalize(), {
+      signal,
+      onInterrupt: interruptActiveOutput,
+    })
     output = null
     if (!target.buffer) throw new Error("Mediabunny finalized without an output buffer.")
 
@@ -143,11 +170,10 @@ export async function createBoomerangVideo(
       verification,
     }
   } catch (error) {
-    if (output && output.state !== "finalized" && output.state !== "canceled") {
-      await output.cancel().catch(() => undefined)
-    }
+    const cancellation = cancelActiveOutput()
+    if (cancellation) await waitForMediaCleanup(cancellation)
     throw toProcessingError(error)
   } finally {
-    for (const frame of retainedFrames) frame.close()
+    releaseRetainedVideoFrames(retainedFrames)
   }
 }
