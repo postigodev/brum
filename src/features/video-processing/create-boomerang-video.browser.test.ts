@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest"
 import { createExtensionPlan, type ExtensionTarget } from "../video-selection/extension-plan"
 import audioFixtureUrl from "./__fixtures__/h264-aac.mp4?url"
 import directionalFixtureUrl from "./__fixtures__/h264-directional.mp4?url"
+import manyFramesFixtureUrl from "./__fixtures__/h264-many-frames.mp4?url"
 import { createBoomerangVideo } from "./create-boomerang-video"
 import { readVideoTrackDuration } from "./inspect-media"
 import { TIMELINE_TOLERANCE_SECONDS } from "./processing-validation"
@@ -99,6 +100,26 @@ async function countAudioTracks(blob: Blob) {
   }
 }
 
+async function inspectDecodedOutput(blob: Blob) {
+  const input = new Input({ formats: [MP4], source: new BlobSource(blob) })
+  try {
+    const videoTracks = await input.getVideoTracks()
+    const videoTrack = videoTracks[0]
+    if (!videoTrack || videoTracks.length !== 1) throw new Error("Expected one video track.")
+
+    let frameCount = 0
+    const sink = new VideoSampleSink(videoTrack)
+    for await (const sample of sink.samples()) {
+      sample.close()
+      frameCount += 1
+    }
+
+    return { frameCount, duration: await videoTrack.computeDuration() }
+  } finally {
+    input.dispose()
+  }
+}
+
 function expectExactDuration(actual: number, expected: number) {
   expect(Math.abs(actual - expected)).toBeLessThanOrEqual(TIMELINE_TOLERANCE_SECONDS)
 }
@@ -134,5 +155,14 @@ describe("generated boomerang playback", () => {
     const { result } = await createOutput(source, { mode: "loops", value: 2 })
 
     expect(await countAudioTracks(result.blob)).toBe(0)
+  })
+
+  it("processes a 120-frame source without retaining decoder resources", async () => {
+    const source = await fixture(manyFramesFixtureUrl, "h264-many-frames.mp4")
+    const { result, outputDuration } = await createOutput(source, { mode: "loops", value: 2 })
+    const decoded = await inspectDecodedOutput(result.blob)
+
+    expect(decoded.frameCount).toBe(480)
+    expectExactDuration(decoded.duration, outputDuration)
   })
 })

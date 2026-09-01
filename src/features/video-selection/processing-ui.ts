@@ -15,6 +15,8 @@ const PROCESSING_ERROR_MESSAGES: Record<ProcessingErrorCode, string> = {
   "video-encoder-unavailable": "This browser cannot create H.264 video locally.",
   "decoded-video-memory-exceeded":
     "This video needs too much decoded memory to process safely on this device.",
+  "media-stalled":
+    "Video processing stopped responding. Try again or choose a shorter or smaller MP4.",
   canceled: "Boomerang creation was canceled.",
   "verification-failed": "Brum could not verify the completed video.",
   "processing-failed": "Brum could not create this boomerang. Try another MP4.",
