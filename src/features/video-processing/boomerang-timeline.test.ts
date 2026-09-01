@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest"
 
+import { SPEED_PRESETS } from "#/features/video-selection/extension-plan"
+
 import { createBoomerangTimeline } from "./boomerang-timeline"
 
 const frames = [
@@ -10,8 +12,29 @@ const frames = [
 ]
 
 describe("boomerang timeline", () => {
+  it.each([
+    { speed: "original", multiplier: SPEED_PRESETS.original, emittedDuration: 1.5 },
+    { speed: "boomerang", multiplier: SPEED_PRESETS.boomerang, emittedDuration: 1 },
+    { speed: "slowMo", multiplier: SPEED_PRESETS.slowMo, emittedDuration: 2 },
+  ])("scales frame timing continuously for $speed", ({ multiplier, emittedDuration }) => {
+    const sourceFrames = [
+      { timestamp: 0, duration: 1.5 },
+      { timestamp: 1.5, duration: 1.5 },
+      { timestamp: 3, duration: 1.5 },
+      { timestamp: 4.5, duration: 1.5 },
+    ]
+    const cycleDuration = (2 * 6) / multiplier
+    const timeline = createBoomerangTimeline(sourceFrames, 6, cycleDuration, multiplier)
+
+    expect(timeline.map(({ sourceIndex }) => sourceIndex)).toEqual([0, 1, 2, 3, 3, 2, 1, 0])
+    timeline.forEach((entry, index) => {
+      expect(entry.timestamp).toBeCloseTo(index * emittedDuration, 10)
+      expect(entry.duration).toBeCloseTo(emittedDuration, 10)
+    })
+  })
+
   it("emits a complete forward/reverse cycle with duplicated endpoints", () => {
-    const timeline = createBoomerangTimeline(frames, 1, 2)
+    const timeline = createBoomerangTimeline(frames, 1, 2, SPEED_PRESETS.original)
 
     expect(timeline.map(({ sourceIndex }) => sourceIndex)).toEqual([0, 1, 2, 3, 3, 2, 1, 0])
     expect(timeline.map(({ direction }) => direction)).toEqual([
@@ -28,7 +51,7 @@ describe("boomerang timeline", () => {
   })
 
   it("shortens the final frame for a cutoff inside the forward half", () => {
-    const timeline = createBoomerangTimeline(frames, 1, 0.6)
+    const timeline = createBoomerangTimeline(frames, 1, 0.6, SPEED_PRESETS.original)
 
     expect(timeline.map(({ sourceIndex }) => sourceIndex)).toEqual([0, 1, 2])
     expect(timeline.at(-1)).toMatchObject({
@@ -40,7 +63,7 @@ describe("boomerang timeline", () => {
   })
 
   it("shortens the final frame for a cutoff inside the reverse half", () => {
-    const timeline = createBoomerangTimeline(frames, 1, 1.35)
+    const timeline = createBoomerangTimeline(frames, 1, 1.35, SPEED_PRESETS.original)
 
     expect(timeline.map(({ sourceIndex }) => sourceIndex)).toEqual([0, 1, 2, 3, 3, 2])
     expect(timeline.at(-1)).toMatchObject({
@@ -57,7 +80,7 @@ describe("boomerang timeline", () => {
       { timestamp: 0.4, duration: 0.4 },
       { timestamp: 0.8, duration: 0.04 },
     ]
-    const timeline = createBoomerangTimeline(shortVideoFrames, 0.84, 1.68)
+    const timeline = createBoomerangTimeline(shortVideoFrames, 0.84, 1.68, SPEED_PRESETS.original)
 
     expect(timeline.map(({ sourceIndex }) => sourceIndex)).toEqual([0, 1, 2, 2, 1, 0])
     const expectedDurations = [0.4, 0.4, 0.04, 0.04, 0.4, 0.4]

@@ -120,6 +120,7 @@ export async function createBoomerangVideo(
       retainedFrames,
       source.video.duration,
       plan.outputDuration,
+      plan.speedMultiplier,
     )
 
     const target = new BufferTarget()
