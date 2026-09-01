@@ -19,7 +19,7 @@ describe("boomerang video processing", () => {
     const file = await fixture("h264-aac-short-video.mp4")
     const source = await inspectMedia(file)
     const visualDuration = await readVideoTrackDuration(file)
-    const plan = createExtensionPlan(visualDuration, { mode: "loops", value: 2 })
+    const plan = createExtensionPlan(visualDuration, { mode: "loops", value: 2 }, "original")
     if (!plan.ok) throw new Error(plan.reason)
 
     expect(source.duration).toBeCloseTo(1.001, 3)
@@ -36,7 +36,7 @@ describe("boomerang video processing", () => {
   it("stops before decoding when canceled", async () => {
     const file = await fixture("h264-video.mp4")
     const source = await inspectMedia(file)
-    const plan = createExtensionPlan(source.video.duration, { mode: "loops", value: 2 })
+    const plan = createExtensionPlan(source.video.duration, { mode: "loops", value: 2 }, "original")
     if (!plan.ok) throw new Error(plan.reason)
 
     const controller = new AbortController()

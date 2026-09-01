@@ -213,7 +213,7 @@ export function VideoSelection() {
   const sourceDuration = metadata.status === "ready" ? metadata.duration : null
   const planResult =
     sourceDuration !== null && targetValue !== null
-      ? createExtensionPlan(sourceDuration, { mode: targetMode, value: targetValue })
+      ? createExtensionPlan(sourceDuration, { mode: targetMode, value: targetValue }, "original")
       : null
   const plan = planResult?.ok ? planResult.plan : null
   const resultFilename =

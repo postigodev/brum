@@ -13,7 +13,7 @@ import {
 const ONE_MEBIBYTE_PER_SECOND_BITRATE = 8 * 1024 * 1024
 
 function plan(sourceDuration: number, mode: "duration" | "loops", value: number) {
-  const result = createExtensionPlan(sourceDuration, { mode, value })
+  const result = createExtensionPlan(sourceDuration, { mode, value }, "original")
   if (!result.ok) throw new Error(result.reason)
   return result.plan
 }

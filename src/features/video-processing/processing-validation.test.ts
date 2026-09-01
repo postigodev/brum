@@ -10,6 +10,9 @@ import {
 function plan(sourceDuration = 1): ExtensionPlan {
   return {
     sourceDuration,
+    speed: "original",
+    speedMultiplier: 1,
+    passDuration: sourceDuration,
     cycleDuration: sourceDuration * 2,
     target: { mode: "loops", value: 2 },
     outputDuration: sourceDuration * 4,
