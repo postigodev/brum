@@ -16,7 +16,8 @@ backward.
 The core MVP workflow is available at `/tool`:
 
 - Select and preview a local video.
-- Extend it to exactly 15, 30, 45, or 60 seconds, or create 2, 3, 5, or 10 complete cycles.
+- Create exactly 15, 30, 45, or 60 seconds of output, or create 2, 3, 5, or 10
+  complete cycles.
 - Preview and download the generated MP4.
 - Share the result when the browser supports sharing local files.
 

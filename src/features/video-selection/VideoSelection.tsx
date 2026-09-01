@@ -299,7 +299,7 @@ export function VideoSelection() {
     }
 
     if (!plan) {
-      return "Choose a target to prepare the extension."
+      return "Choose a target to prepare the boomerang."
     }
 
     if (plan.target.mode === "loops") {
@@ -316,228 +316,223 @@ export function VideoSelection() {
   })()
 
   return (
-    <>
-      <section aria-labelledby="selection-title" className="ios-group ios-selection-group">
+    <div className="tool-configurator">
+      <section className="tool-preview-column" aria-labelledby="selection-title">
         <input
           ref={inputRef}
-          className="ios-visually-hidden"
+          className="visually-hidden"
           type="file"
           accept="video/mp4,.mp4"
           onChange={handleSelection}
           tabIndex={-1}
         />
 
-        {selectedFile ? (
-          <>
-            <div className="ios-video-preview">
-              {resultUrl || previewUrl ? (
-                // biome-ignore lint/a11y/useMediaCaption: User-selected local videos do not have an associated captions file.
-                <video
-                  key={resultUrl ?? previewUrl}
-                  className="ios-video-element"
-                  src={resultUrl ?? previewUrl ?? undefined}
-                  controls
-                  playsInline
-                  preload="metadata"
-                  aria-label={
-                    result
-                      ? `Preview of finished ${resultFilename}`
-                      : `Preview of ${selectedFile.name}`
-                  }
-                  onError={result ? undefined : handlePreviewError}
-                />
-              ) : (
-                <p className="ios-selection-status">Preparing preview…</p>
-              )}
-            </div>
-
-            <div className="ios-selected-file">
-              <div className="ios-selected-file-copy">
-                <h2 id="selection-title" className="ios-selection-title">
-                  {result ? resultFilename : selectedFile.name}
-                </h2>
-                <p className="ios-selection-status">
-                  {result ? formatFileSize(result.byteSize) : formatFileSize(selectedFile.size)}
-                  {result
-                    ? ` · ${formatDuration(result.duration)} · Ready`
-                    : metadata.status === "ready"
-                      ? ` · ${formatDuration(metadata.duration)} · Local file`
-                      : " · Local file"}
-                </p>
-              </div>
-              <div className="ios-selection-actions">
-                <button type="button" className="ios-selection-action" onClick={openPicker}>
-                  Choose another
-                </button>
-                <button
-                  type="button"
-                  className="ios-selection-action ios-selection-action-muted"
-                  onClick={removeSelection}
-                >
-                  Remove
-                </button>
-              </div>
-            </div>
-          </>
-        ) : (
-          <button
-            type="button"
-            className="ios-selection-surface ios-selection-trigger"
-            onClick={openPicker}
-            aria-describedby="selection-helper"
-          >
-            <svg
-              aria-hidden="true"
-              viewBox="0 0 48 48"
-              className="ios-selection-icon"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
+        <div className="tool-preview" aria-busy={processing}>
+          {selectedFile ? (
+            resultUrl || previewUrl ? (
+              // biome-ignore lint/a11y/useMediaCaption: User-selected local videos do not have an associated captions file.
+              <video
+                key={resultUrl ?? previewUrl}
+                className="tool-video-element"
+                src={resultUrl ?? previewUrl ?? undefined}
+                controls
+                playsInline
+                preload="metadata"
+                aria-label={
+                  result
+                    ? `Preview of finished ${resultFilename}`
+                    : `Preview of ${selectedFile.name}`
+                }
+                onError={result ? undefined : handlePreviewError}
+              />
+            ) : (
+              <p className="tool-preview-status">Preparing preview…</p>
+            )
+          ) : (
+            <button
+              type="button"
+              className="tool-empty-state"
+              onClick={openPicker}
+              aria-describedby="selection-helper"
             >
-              <path d="M8.5 13.5h31v23h-31z" />
-              <path d="m20 19 9 6-9 6V19Z" />
-            </svg>
-            <h2 id="selection-title" className="ios-selection-title">
-              Video selection
-            </h2>
-            <p id="selection-helper" className="ios-selection-status">
-              Choose a video from this device.
-            </p>
-          </button>
-        )}
+              <svg
+                aria-hidden="true"
+                viewBox="0 0 24 24"
+                className="tool-empty-icon"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+              >
+                <path d="M12 4v11m0-11 4 4m-4-4-4 4M6 13v5.25A1.75 1.75 0 0 0 7.75 20h8.5A1.75 1.75 0 0 0 18 18.25V13" />
+              </svg>
+              <h2 id="selection-title">No video selected</h2>
+              <p id="selection-helper">Choose a supported MP4 from this device.</p>
+            </button>
+          )}
+
+          {processing ? (
+            <div className="tool-processing-overlay">
+              <span className="tool-spinner" aria-hidden="true" />
+              <strong>Creating boomerang…</strong>
+              <span>Keep this page open while Brum builds and verifies the file.</span>
+            </div>
+          ) : null}
+
+          {result ? <span className="tool-ready-badge">Ready</span> : null}
+        </div>
 
         {error ? (
-          <p className="ios-selection-error" role="alert">
+          <p className="tool-error" role="alert">
             {error}
           </p>
         ) : null}
-        <p className="ios-visually-hidden" aria-live="polite">
+        <p className="visually-hidden" aria-live="polite">
           {status}
         </p>
       </section>
 
-      {selectedFile ? (
-        <section className="ios-target" aria-labelledby="target-title">
-          <h2 id="target-title" className="ios-section-heading">
-            Target
-          </h2>
+      <aside className="tool-options" aria-label="Video settings">
+        <section className="tool-options-section">
+          <h2>Video</h2>
+          <p>Choose the source file for your boomerang.</p>
 
-          <fieldset className="ios-target-mode-group">
-            <legend className="ios-visually-hidden">Target mode</legend>
-            <div className="ios-target-segmented">
-              {(["duration", "loops"] as const).map((mode) => (
-                <label className="ios-target-segment" key={mode}>
-                  <input
-                    className="ios-visually-hidden"
-                    type="radio"
-                    name="target-mode"
-                    value={mode}
-                    checked={targetMode === mode}
-                    disabled={processing}
-                    onChange={() => changeTargetMode(mode)}
-                  />
-                  <span>{mode === "duration" ? "Duration" : "Loops"}</span>
-                </label>
-              ))}
+          {selectedFile ? (
+            <div className="tool-file-meta">
+              <span className="tool-file-icon">MP4</span>
+              <div className="tool-file-copy">
+                <strong>{result ? resultFilename : selectedFile.name}</strong>
+                <span>
+                  {result ? formatFileSize(result.byteSize) : formatFileSize(selectedFile.size)}
+                  {result
+                    ? ` · ${formatDuration(result.duration)} · Ready`
+                    : metadata.status === "ready"
+                      ? ` · ${formatDuration(metadata.duration)} · Local`
+                      : " · Reading…"}
+                </span>
+              </div>
+              <button type="button" className="tool-inline-action" onClick={openPicker}>
+                Change
+              </button>
             </div>
-          </fieldset>
+          ) : (
+            <button
+              type="button"
+              className="button-primary tool-choose-button"
+              onClick={openPicker}
+            >
+              Choose Video
+            </button>
+          )}
+        </section>
 
-          <fieldset className="ios-target-options-group">
-            <legend className="ios-target-legend">
-              {targetMode === "duration" ? "Target duration" : "Boomerang cycles"}
-            </legend>
-            <div className="ios-group">
-              {activeTargetOptions.map((value) => {
-                const disabled = isTargetDisabled(value)
-                const unavailable =
-                  metadata.status === "ready" && targetMode === "duration" && disabled
+        <section className="tool-options-section" aria-labelledby="target-title">
+          <h2 id="target-title">Output</h2>
+          <p>Choose an exact duration or number of complete cycles.</p>
 
-                return (
-                  <label className="ios-target-option" key={`${targetMode}-${value}`}>
-                    <input
-                      className="ios-visually-hidden"
-                      type="radio"
-                      name="target-value"
-                      value={value}
-                      checked={targetValue === value}
-                      disabled={disabled || processing}
-                      onChange={() => selectTarget(value)}
-                    />
-                    <span>
-                      {targetMode === "duration"
-                        ? `${value} seconds`
-                        : `${value}× boomerang cycles`}
-                    </span>
-                    <span className="ios-target-option-trailing">
-                      {unavailable ? (
-                        <span className="ios-target-unavailable">Unavailable</span>
-                      ) : (
-                        <span className="ios-target-check" aria-hidden="true">
-                          {targetValue === value ? "✓" : ""}
-                        </span>
-                      )}
-                    </span>
-                  </label>
-                )
-              })}
-            </div>
-          </fieldset>
-
-          <p className="ios-target-note">{targetDescription}</p>
-
-          {plan ? (
-            <section className="ios-processing" aria-labelledby="processing-title">
-              <div className="ios-group ios-processing-panel" aria-busy={processing}>
-                <div>
-                  <h2 id="processing-title" className="ios-processing-title">
-                    {result
-                      ? "Video ready"
-                      : processing
-                        ? "Building boomerang locally…"
-                        : "Ready to create"}
-                  </h2>
-                  <p className="ios-processing-copy">
-                    {result
-                      ? "The finished MP4 is ready to preview, save, or share."
-                      : processing
-                        ? "Keep Brum open while it builds and verifies the new file."
-                        : "Processing stays in this browser. Your video is not uploaded."}
-                  </p>
+          {selectedFile ? (
+            <>
+              <fieldset className="tool-fieldset">
+                <legend>Measure by</legend>
+                <div className="tool-segmented">
+                  {(["duration", "loops"] as const).map((mode) => (
+                    <label className="tool-segment" key={mode}>
+                      <input
+                        className="visually-hidden"
+                        type="radio"
+                        name="target-mode"
+                        value={mode}
+                        checked={targetMode === mode}
+                        disabled={processing}
+                        onChange={() => changeTargetMode(mode)}
+                      />
+                      <span>{mode === "duration" ? "Duration" : "Cycles"}</span>
+                    </label>
+                  ))}
                 </div>
+              </fieldset>
 
+              <fieldset className="tool-fieldset">
+                <legend>{targetMode === "duration" ? "Length" : "Boomerang cycles"}</legend>
+                <div className="tool-targets">
+                  {activeTargetOptions.map((value) => {
+                    const disabled = isTargetDisabled(value)
+                    const unavailable =
+                      metadata.status === "ready" && targetMode === "duration" && disabled
+
+                    return (
+                      <label className="tool-target" key={`${targetMode}-${value}`}>
+                        <input
+                          className="visually-hidden"
+                          type="radio"
+                          name="target-value"
+                          value={value}
+                          checked={targetValue === value}
+                          disabled={disabled || processing}
+                          onChange={() => selectTarget(value)}
+                        />
+                        <span>
+                          {targetMode === "duration" ? `${value} seconds` : `${value} cycles`}
+                        </span>
+                        {unavailable ? <small>Unavailable</small> : null}
+                      </label>
+                    )
+                  })}
+                </div>
+              </fieldset>
+
+              <div className="tool-output-summary">
+                <span>Output plan</span>
+                <strong>{targetDescription}</strong>
+              </div>
+
+              <div className="tool-actions" aria-busy={processing}>
                 {result && resultUrl && resultFilename ? (
-                  <div className="ios-processing-actions">
-                    <a className="ios-primary-action" href={resultUrl} download={resultFilename}>
+                  <>
+                    <a className="button-primary" href={resultUrl} download={resultFilename}>
                       Save video
                     </a>
                     {shareAvailable ? (
                       <button
                         type="button"
-                        className="ios-secondary-action"
+                        className="button-secondary"
                         onClick={() => void shareResult()}
                       >
                         Share video
                       </button>
                     ) : null}
-                  </div>
+                    <button type="button" className="button-secondary" onClick={removeSelection}>
+                      Start over
+                    </button>
+                  </>
                 ) : processing ? (
-                  <button type="button" className="ios-secondary-action" onClick={cancelProcessing}>
+                  <button type="button" className="button-secondary" onClick={cancelProcessing}>
                     Cancel
                   </button>
                 ) : (
-                  <button
-                    type="button"
-                    className="ios-primary-action"
-                    onClick={() => void createBoomerang()}
-                  >
-                    Create boomerang
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      className="button-primary"
+                      disabled={!plan}
+                      onClick={() => void createBoomerang()}
+                    >
+                      Create boomerang
+                    </button>
+                    <button type="button" className="button-secondary" onClick={removeSelection}>
+                      Reset
+                    </button>
+                  </>
                 )}
               </div>
-            </section>
+            </>
           ) : null}
         </section>
-      ) : null}
-    </>
+
+        <p className="tool-privacy-note">
+          Processing happens in this browser. Source videos are not uploaded, and generated MP4s are
+          silent.
+        </p>
+      </aside>
+    </div>
   )
 }

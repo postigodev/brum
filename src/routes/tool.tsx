@@ -1,44 +1,38 @@
-import { createFileRoute } from "@tanstack/react-router"
+import { createFileRoute, Link } from "@tanstack/react-router"
 
 import { VideoSelection } from "#/features/video-selection/VideoSelection"
 
-export const Route = createFileRoute("/tool")({ component: ToolPage })
+export const Route = createFileRoute("/tool")({
+  head: () => ({
+    meta: [
+      { title: "Create a boomerang — Brum" },
+      {
+        name: "description",
+        content: "Choose a short MP4 and create a silent forward-and-reverse boomerang locally.",
+      },
+    ],
+  }),
+  component: ToolPage,
+})
 
 function ToolPage() {
   return (
-    <main className="ios-main">
-      <section aria-labelledby="tool-title">
-        <h1 id="tool-title" className="ios-page-title ios-tool-title">
-          Start with a short loop.
-        </h1>
-        <p className="ios-body-copy">
-          Choose a short video, extend it locally, then save or share the finished MP4.
-        </p>
-      </section>
+    <>
+      <main className="tool-page">
+        <header className="tool-page-head">
+          <h1>Create a boomerang</h1>
+          <p>Select a short video and choose an exact output target.</p>
+        </header>
+        <VideoSelection />
+      </main>
 
-      <VideoSelection />
-
-      <section aria-labelledby="flow-title" className="ios-flow">
-        <h2 id="flow-title" className="ios-section-heading">
-          Local workflow
-        </h2>
-        <div className="ios-group">
-          <div className="ios-group-row">Select</div>
-          <div className="ios-group-row">Choose a target</div>
-          <div className="ios-group-row">Extend locally</div>
-          <div className="ios-group-row">Save or share</div>
+      <footer className="tool-footer">
+        <div className="tool-footer-inner">
+          <span>Brum</span>
+          <span className="footer-spacer" />
+          <Link to="/privacy">Privacy</Link>
         </div>
-      </section>
-
-      <aside className="ios-group ios-local-note" aria-label="Local processing note">
-        <div>
-          <p className="ios-local-note-title">Designed to stay local</p>
-          <p className="ios-local-note-copy">
-            Brum processes video on your device, without sending the file to a
-            server.
-          </p>
-        </div>
-      </aside>
-    </main>
+      </footer>
+    </>
   )
 }
