@@ -78,7 +78,7 @@ async function decodeStates(blob: Blob) {
 
 async function createOutput(source: File, target: ExtensionTarget) {
   const sourceDuration = await readVideoTrackDuration(source)
-  const plan = createExtensionPlan(sourceDuration, target)
+  const plan = createExtensionPlan(sourceDuration, target, "original")
   if (!plan.ok) throw new Error(plan.reason)
 
   const result = await createBoomerangVideo(source, plan.plan)

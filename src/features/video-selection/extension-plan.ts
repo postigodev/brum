@@ -1,7 +1,13 @@
 export const DURATION_TARGETS = [15, 30, 45, 60] as const
 export const LOOP_TARGETS = [2, 3, 5, 10] as const
+export const SPEED_PRESETS = {
+  boomerang: 1.5,
+  original: 1,
+  slowMo: 0.75,
+} as const
 
 export type TargetMode = "duration" | "loops"
+export type SpeedPreset = keyof typeof SPEED_PRESETS
 
 export type ExtensionTarget = {
   mode: TargetMode
@@ -10,6 +16,9 @@ export type ExtensionTarget = {
 
 export type ExtensionPlan = {
   sourceDuration: number
+  speed: SpeedPreset
+  speedMultiplier: number
+  passDuration: number
   cycleDuration: number
   target: ExtensionTarget
   outputDuration: number
@@ -24,6 +33,7 @@ export type ExtensionPlanResult =
       ok: false
       reason:
         | "invalid-source-duration"
+        | "unsupported-speed"
         | "unsupported-target"
         | "target-does-not-extend"
         | "non-finite-result"
@@ -54,9 +64,15 @@ export function isDurationTargetAvailable(sourceDuration: number, target: number
 export function createExtensionPlan(
   sourceDuration: number,
   target: ExtensionTarget,
+  speed: SpeedPreset,
 ): ExtensionPlanResult {
   if (!isFinitePositive(sourceDuration)) {
     return { ok: false, reason: "invalid-source-duration" }
+  }
+
+  const speedMultiplier = SPEED_PRESETS[speed]
+  if (!isFinitePositive(speedMultiplier)) {
+    return { ok: false, reason: "unsupported-speed" }
   }
 
   const supportedValues = target.mode === "duration" ? DURATION_TARGETS : LOOP_TARGETS
@@ -64,8 +80,9 @@ export function createExtensionPlan(
     return { ok: false, reason: "unsupported-target" }
   }
 
-  const cycleDuration = sourceDuration * 2
-  if (!isFinitePositive(cycleDuration)) {
+  const passDuration = sourceDuration / speedMultiplier
+  const cycleDuration = passDuration * 2
+  if (!isFinitePositive(passDuration) || !isFinitePositive(cycleDuration)) {
     return { ok: false, reason: "non-finite-result" }
   }
 
@@ -79,6 +96,9 @@ export function createExtensionPlan(
       ok: true,
       plan: {
         sourceDuration,
+        speed,
+        speedMultiplier,
+        passDuration,
         cycleDuration,
         target,
         outputDuration,
@@ -101,8 +121,8 @@ export function createExtensionPlan(
   } else if (cycleDuration - remainder <= DURATION_EPSILON_SECONDS) {
     completeCycles += 1
     remainder = 0
-  } else if (Math.abs(sourceDuration - remainder) <= DURATION_EPSILON_SECONDS) {
-    remainder = sourceDuration
+  } else if (Math.abs(passDuration - remainder) <= DURATION_EPSILON_SECONDS) {
+    remainder = passDuration
   }
 
   const finalPartialCycleDuration = remainder === 0 ? null : remainder
@@ -121,6 +141,9 @@ export function createExtensionPlan(
     ok: true,
     plan: {
       sourceDuration,
+      speed,
+      speedMultiplier,
+      passDuration,
       cycleDuration,
       target,
       outputDuration: target.value,
