@@ -867,6 +867,10 @@ video {
   padding: 2px;
 }
 
+.tool-speed-options {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .tool-segment {
   display: flex;
   min-height: 40px;

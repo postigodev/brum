@@ -33,6 +33,7 @@ Completed dated plans and specs under `docs/superpowers/` are historical impleme
 * Media processing remains local and on-device. Do not upload user media.
 * Prefer the existing Mediabunny/browser media stack before introducing FFmpeg.wasm or server-side processing.
 * Exact-duration targets must still produce the requested output duration.
+* Playback speed changes frame timing. Exact-duration targets remain exact, while cycle targets remain complete forward/reverse cycles at the selected speed.
 
 
 
