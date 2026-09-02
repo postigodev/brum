@@ -22,9 +22,11 @@ export function createBoomerangTimeline(
   frames: readonly VideoFrameTiming[],
   sourceDuration: number,
   outputDuration: number,
+  speedMultiplier: number,
 ) {
   assertFinitePositive(sourceDuration, "sourceDuration")
   assertFinitePositive(outputDuration, "outputDuration")
+  assertFinitePositive(speedMultiplier, "speedMultiplier")
   const firstFrame = frames[0]
   if (!firstFrame || !Number.isFinite(firstFrame.timestamp)) {
     throw new TypeError("frames must contain at least one finite timestamp.")
@@ -38,12 +40,12 @@ export function createBoomerangTimeline(
     const start = frame.timestamp - firstFrame.timestamp
     const next = frames[sourceIndex + 1]
     const end = next ? next.timestamp - firstFrame.timestamp : sourceDuration
-    const duration = end - start
-    if (start < 0 || duration <= 0 || end > sourceDuration + Number.EPSILON) {
+    const sourceFrameDuration = end - start
+    if (start < 0 || sourceFrameDuration <= 0 || end > sourceDuration + Number.EPSILON) {
       throw new TypeError("frame timestamps must form a positive presentation-order timeline.")
     }
 
-    return { sourceIndex, duration }
+    return { sourceIndex, duration: sourceFrameDuration / speedMultiplier }
   })
 
   const cycleFrames = [
