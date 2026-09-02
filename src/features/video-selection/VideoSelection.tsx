@@ -12,6 +12,7 @@ import {
   DURATION_TARGETS,
   isDurationTargetAvailable,
   LOOP_TARGETS,
+  type SpeedPreset,
   type TargetMode,
 } from "./extension-plan"
 import { outputFilename, processingErrorMessage } from "./processing-ui"
@@ -25,6 +26,16 @@ const TARGET_OPTIONS = {
   duration: DURATION_TARGETS,
   loops: LOOP_TARGETS,
 } as const
+
+const SPEED_OPTIONS = [
+  { value: "boomerang", label: "Boomerang" },
+  { value: "slowMo", label: "Slow Motion" },
+  { value: "original", label: "Original" },
+] as const satisfies readonly { value: SpeedPreset; label: string }[]
+
+function speedLabel(speed: SpeedPreset) {
+  return SPEED_OPTIONS.find((option) => option.value === speed)?.label ?? speed
+}
 
 function formatFileSize(bytes: number) {
   if (bytes < 1024) {
@@ -55,6 +66,7 @@ export function VideoSelection() {
   const [shareAvailable, setShareAvailable] = useState(false)
   const [targetMode, setTargetMode] = useState<TargetMode>("duration")
   const [targetValue, setTargetValue] = useState<number | null>(null)
+  const [speed, setSpeed] = useState<SpeedPreset>("boomerang")
   const [metadata, setMetadata] = useState<MetadataState>({ status: "loading" })
   const targetModeRef = useRef(targetMode)
   const targetValueRef = useRef(targetValue)
@@ -185,6 +197,7 @@ export function VideoSelection() {
   function resetTarget() {
     setTargetMode("duration")
     setTargetValue(null)
+    setSpeed("boomerang")
   }
 
   function changeTargetMode(mode: TargetMode) {
@@ -204,6 +217,12 @@ export function VideoSelection() {
     )
   }
 
+  function changeSpeed(nextSpeed: SpeedPreset) {
+    resetProcessing()
+    setSpeed(nextSpeed)
+    setStatus(`${speedLabel(nextSpeed)} speed selected. Boomerang creation has not started.`)
+  }
+
   function handlePreviewError() {
     setError("Brum could not preview this video, but local processing may still be available.")
     setStatus("Video preview could not be loaded.")
@@ -213,7 +232,7 @@ export function VideoSelection() {
   const sourceDuration = metadata.status === "ready" ? metadata.duration : null
   const planResult =
     sourceDuration !== null && targetValue !== null
-      ? createExtensionPlan(sourceDuration, { mode: targetMode, value: targetValue }, "original")
+      ? createExtensionPlan(sourceDuration, { mode: targetMode, value: targetValue }, speed)
       : null
   const plan = planResult?.ok ? planResult.plan : null
   const resultFilename =
@@ -303,7 +322,8 @@ export function VideoSelection() {
     }
 
     if (plan.target.mode === "loops") {
-      return `${plan.totalCycles} boomerang cycles · ${formatDuration(plan.outputDuration)} output.`
+      const cycleCopy = `${plan.totalCycles} complete ${plan.totalCycles === 1 ? "cycle" : "cycles"}`
+      return `${cycleCopy} · ${formatDuration(plan.outputDuration)} · ${speedLabel(plan.speed)}.`
     }
 
     const completeCycleCopy = `${plan.completeCycles} complete ${plan.completeCycles === 1 ? "cycle" : "cycles"}`
@@ -312,7 +332,7 @@ export function VideoSelection() {
         ? `${completeCycleCopy} only`
         : `${completeCycleCopy} · final cycle trimmed to ${formatDuration(plan.finalPartialCycleDuration)}`
 
-    return `${formatDuration(plan.outputDuration)} exact · ${trimCopy}.`
+    return `${formatDuration(plan.outputDuration)} exact · ${trimCopy} · ${speedLabel(plan.speed)}.`
   })()
 
   return (
@@ -446,6 +466,26 @@ export function VideoSelection() {
                         onChange={() => changeTargetMode(mode)}
                       />
                       <span>{mode === "duration" ? "Duration" : "Cycles"}</span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+
+              <fieldset className="tool-fieldset">
+                <legend>Speed</legend>
+                <div className="tool-segmented tool-speed-options">
+                  {SPEED_OPTIONS.map((option) => (
+                    <label className="tool-segment" key={option.value}>
+                      <input
+                        className="visually-hidden"
+                        type="radio"
+                        name="speed"
+                        value={option.value}
+                        checked={speed === option.value}
+                        disabled={processing}
+                        onChange={() => changeSpeed(option.value)}
+                      />
+                      <span>{option.label}</span>
                     </label>
                   ))}
                 </div>
