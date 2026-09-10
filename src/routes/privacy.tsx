@@ -88,8 +88,8 @@ function PrivacyPage() {
               are replaced or when you leave the workflow.
             </p>
             <p className="policy-note">
-              Inputs are limited to 50 MiB, generated outputs to 200 MiB, and decoded frame storage
-              to a 256 MiB safety budget.
+              Inputs are limited to 50 MiB and generated outputs to 200 MiB. Processing retains one
+              decoded range at a time, limited to 8 frames and 32 MiB of pixel storage.
             </p>
           </section>
 

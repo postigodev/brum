@@ -1402,3 +1402,17 @@ video {
     transition-duration: 0.01ms !important;
   }
 }
+
+.tool-diagnostics {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  border: 1px solid currentColor;
+  border-radius: 0.5rem;
+  font-size: 0.75rem;
+}
+
+.tool-diagnostics pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}

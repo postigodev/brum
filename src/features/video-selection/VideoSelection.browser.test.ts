@@ -1,6 +1,7 @@
+import { VideoSampleSource } from "mediabunny"
 import { createElement } from "react"
 import { createRoot, type Root } from "react-dom/client"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { userEvent } from "vitest/browser"
 
 import directionalFixtureUrl from "../video-processing/__fixtures__/h264-directional.mp4?url"
@@ -8,8 +9,11 @@ import { VideoSelection } from "./VideoSelection"
 
 let root: Root | null = null
 let container: HTMLDivElement | null = null
+const originalUrl = window.location.href
 
 afterEach(() => {
+  vi.restoreAllMocks()
+  window.history.replaceState(null, "", originalUrl)
   root?.unmount()
   container?.remove()
   root = null
@@ -90,6 +94,40 @@ function outputSummary() {
 }
 
 describe("VideoSelection browser workflow", () => {
+  it.each([
+    true,
+    false,
+  ])("exposes codec diagnostics only with debug=1 (enabled: %s)", async (debug) => {
+    const url = new URL(window.location.href)
+    url.searchParams.set("debug", debug ? "1" : "0")
+    window.history.replaceState(null, "", url)
+    const failure = new DOMException("Synthetic AVC add failure", "OperationError")
+    vi.spyOn(VideoSampleSource.prototype, "add").mockRejectedValueOnce(failure)
+    await renderWorkflow()
+    await selectFixture("diagnostic-private.mp4")
+    await selectCycleTarget("2")
+    const button = await waitFor(() => {
+      const candidate = buttonByText("Create boomerang")
+      return candidate && !candidate.disabled ? candidate : null
+    })
+    button.click()
+    await waitFor(() => document.querySelector(".tool-error"))
+    expect(document.querySelector(".tool-error")?.textContent).not.toContain("Synthetic")
+    if (debug) {
+      const report = await waitFor(() => document.querySelector(".tool-diagnostics pre"))
+      expect(report.textContent).toContain("processing code: processing-failed")
+      expect(report.textContent).toContain("processing stage: video-sample-add")
+      expect(report.textContent).toContain("underlying error name: OperationError")
+      expect(report.textContent).toContain("underlying error message: Synthetic AVC add failure")
+      expect(report.textContent).toContain("source frame index: 0")
+      expect(report.textContent).toContain("ranges decoded: 1")
+      expect(report.textContent).not.toMatch(/diagnostic-private|stack/i)
+    } else {
+      expect(document.querySelector(".tool-diagnostics")).toBeNull()
+      expect(document.body.textContent).not.toContain("Synthetic AVC add failure")
+    }
+  })
+
   it("defaults to Boomerang and exposes all speed presets as a keyboard-operable radio group", async () => {
     const emptyState = await renderWorkflow()
     expect(emptyState.textContent).toContain("No video selected")

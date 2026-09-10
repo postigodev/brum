@@ -13,6 +13,7 @@ const PROCESSING_ERROR_MESSAGES: Record<ProcessingErrorCode, string> = {
   "unsupported-timeline": "This video's track timing is not supported yet.",
   "video-decoder-unavailable": "This browser cannot decode this H.264 video locally.",
   "video-encoder-unavailable": "This browser cannot create H.264 video locally.",
+  "unsupported-pixel-representation": "This browser cannot safely copy this video pixel format.",
   "decoded-video-memory-exceeded":
     "This video needs too much decoded memory to process safely on this device.",
   "media-stalled":

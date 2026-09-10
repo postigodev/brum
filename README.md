@@ -29,7 +29,7 @@ intentional video uploads.
 > Inputs are currently limited to MP4 files containing exactly one H.264 video track, at most one
 > source audio track, and no unrelated tracks. Source audio is intentionally discarded, so generated
 > MP4 files are silent. Inputs can be up to 50 MiB and outputs up to 200 MiB. Physical iPhone/Safari
-> validation has not yet been performed.
+> validation of the bounded-memory processor is still pending.
 
 ## How it works
 
@@ -41,9 +41,19 @@ trim the final emitted frame when necessary, while cycle targets remain complete
 cycles at the selected speed. Timing always comes from the video track rather than a longer
 container or audio tail.
 
-Before retaining decoded frames, Brum enforces a 256 MiB decoded-video budget. It also validates
-the readable output, duration, codec, geometry, silence, and continuous decoded timeline. CI runs a
-Chromium regression that decodes generated output and verifies `A B C D D C B A` playback.
+A first decode pass retains only frame timing and range metadata, closing each sample immediately.
+Encoding then loads one presentation-order range at a time through Mediabunny, emits the required
+forward/reverse frames, and releases the range before loading another. Each range is limited to
+8 frames and 32 MiB of owned native-format pixels, checked before allocation. A 1080p NV12
+range holds eight frames (about 23.7 MiB), independent of source duration. Recreating an encoding sample temporarily
+copies one additional frame; codec-owned surfaces and queues are additional browser-managed memory.
+Whole-source RGBA storage is no longer used.
+
+Brum validates the readable output, duration, codec, geometry, silence, and continuous decoded
+timeline. Chromium regressions cover directional playback at every speed and a synthetic 300-frame,
+10-second 1080p source that would require about 2.3 GiB with whole-clip retention. See
+[bounded-memory validation](docs/validation/issue-28.md) for implementation tradeoffs and the pending
+physical iPhone Safari checks.
 
 ## Stack
 

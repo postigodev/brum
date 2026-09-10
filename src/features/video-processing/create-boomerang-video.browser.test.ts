@@ -7,6 +7,7 @@ import {
   SPEED_PRESETS,
   type SpeedPreset,
 } from "../video-selection/extension-plan"
+import fullHdFixtureUrl from "./__fixtures__/h264-1080p.mp4?url"
 import audioFixtureUrl from "./__fixtures__/h264-aac.mp4?url"
 import directionalFixtureUrl from "./__fixtures__/h264-directional.mp4?url"
 import manyFramesFixtureUrl from "./__fixtures__/h264-many-frames.mp4?url"
@@ -159,6 +160,27 @@ function expectContinuousFrameTiming(
 }
 
 describe("generated boomerang playback", () => {
+  it("processes 10 seconds of 1080p/30 across bounded forward/reverse ranges", async () => {
+    const source = await fixture(fullHdFixtureUrl, "h264-1080p.mp4")
+    // Whole-clip retention would require 2.3 GiB, far above even the old 256 MiB guard.
+    expect(300 * 1920 * 1080 * 4).toBeGreaterThan(256 * 1024 * 1024)
+    const { result, outputDuration } = await createOutput(
+      source,
+      { mode: "duration", value: 15 },
+      "original",
+    )
+    const decoded = await decodeStates(result.blob)
+    const forward = Array.from(
+      { length: 300 },
+      (_, index) => (["A", "B", "C", "D"] as const)[index % 4],
+    )
+    expect(decoded.states).toEqual([...forward, ...[...forward].reverse().slice(0, 150)])
+    expect(result.video.codedWidth).toBe(1920)
+    expect(result.video.codedHeight).toBe(1080)
+    expect(decoded.audioTrackCount).toBe(0)
+    expectExactDuration(decoded.duration, outputDuration)
+  }, 120_000)
+
   it.each(SPEED_CASES)("decodes two continuous complete cycles at $speed speed", async ({
     speed,
     emittedDuration,

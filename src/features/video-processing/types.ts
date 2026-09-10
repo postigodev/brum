@@ -1,4 +1,5 @@
 import type { Rotation } from "mediabunny"
+import type { ProcessingSnapshot } from "./processing-diagnostics"
 
 export type VideoTrackSummary = {
   kind: "video"
@@ -37,4 +38,7 @@ export type BoomerangResult = {
   verification: BoomerangVerification
 }
 
-export type ProcessingOptions = { signal?: AbortSignal }
+export type ProcessingOptions = {
+  signal?: AbortSignal
+  onProgress?: (snapshot: ProcessingSnapshot) => void
+}
