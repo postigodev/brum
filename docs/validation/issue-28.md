@@ -1,7 +1,37 @@
 # Issue #28: bounded decoded-memory processing
 
-Implemented against Mediabunny **1.53.0**. Physical iPhone Safari validation is **pending**;
-this document does not certify the physical-device acceptance criterion or close the issue.
+Implemented against Mediabunny **1.53.0**. Physical iPhone Safari acceptance is **pending**.
+The tester reported that PR #31 at `5c39223` gets past the old memory error but fails with
+`processing-failed` on the original approximately 10-second/7.3 MB H.264 MP4. No underlying
+operation has been identified yet. The diagnostic revision below still requires a physical retest;
+this document does not certify acceptance or close the issue.
+
+## Temporary preview diagnostics
+
+Open the updated PR #31 Vercel preview at `/tool?debug=1` before selecting the original file.
+Choose the same settings that failed and create the boomerang. An open **Processing diagnostics**
+panel below the preview shows local progress and keeps the final error report available for text
+selection/copying. Send that report back before choosing a Safari workaround. A new attempt or
+selection/settings change resets the report. Remove `debug=1` to hide the panel.
+
+The report includes the processing code, stable stage identifier, underlying exception name and
+message, metadata-frame count, decoded-range count, encoded/output-frame counts, and zero-based
+source/range/output indices and direction when applicable. Counts describe completed work; the
+stage and indices identify the operation being attempted. `range-decode-seek` includes Mediabunny
+preroll and range iteration; an index on a failed iterator read is the next expected source frame.
+
+Stages distinguish source inspection, decoder and encoder capability checks, metadata scanning,
+timeline planning, output start, range seek/decode, range validation, decoded-frame copy,
+encoding-sample construction, `VideoSampleSource.add()`, finalization, and output verification.
+`ProcessingError.cause` retains the original exception object; the first failure snapshot survives
+outer error conversion and cleanup. Progress uses one coalesced snapshot, with no growing event log.
+
+The opt-in panel renders only allowlisted fields, never stack traces, serialized error objects,
+file/media contents or browser/user details. Displayed messages use the first line, are capped at
+600 characters, and redact the selected filename, resource URLs and common local paths. The original
+exception message remains intact in `cause`. No report is uploaded or persisted by Brum. Normal
+product error copy is unchanged. These diagnostics do not change the range architecture, sample
+color metadata, codec settings, or cancellation semantics.
 
 ## Architecture and API investigation
 
@@ -60,7 +90,7 @@ is optional future work, not necessary to remove whole-clip retention.
   playback. Whole-clip RGBA would require 2,488,320,000 bytes, exceeding the former 256 MiB guard.
 - Existing directional, exact-duration, cycle, speed, silence and 120-frame regressions preserved.
 
-## Physical iPhone Safari smoke test — not performed
+## Physical iPhone Safari acceptance — still pending
 
 Before closing #28, record device model, iOS/Safari version, revision, elapsed processing time and
 results using the supported H.264 MP4 path. Keep personal media out of the repository.

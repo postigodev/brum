@@ -2,6 +2,7 @@ import { VideoSample } from "mediabunny"
 
 import { ProcessingError, throwIfAborted } from "./errors"
 import { waitForMediaCleanup, waitForMediaOperation } from "./media-operation"
+import type { ProcessingDiagnostics, ProcessingLocation } from "./processing-diagnostics"
 
 export const MAX_RETAINED_DECODED_VIDEO_BYTES = 32 * 1024 * 1024
 export const MAX_RETAINED_DECODED_VIDEO_FRAMES = 8
@@ -46,6 +47,9 @@ export type CollectionOptions = {
   stallTimeoutMs?: number
   onInterrupt?: () => void | PromiseLike<void>
   storage?: RetainedVideoFrameStorage
+  diagnostics?: ProcessingDiagnostics
+  context?: ProcessingLocation
+  decodeStage?: "metadata-scan" | "range-decode-seek"
 }
 
 function memoryError() {
@@ -134,11 +138,15 @@ export class RetainedVideoFrameStorage {
 
 export async function detachDecodedVideoSample(
   sample: DecodedVideoSample,
-  options: Pick<CollectionOptions, "signal" | "stallTimeoutMs" | "onInterrupt" | "maxBytes"> = {},
+  options: Pick<
+    CollectionOptions,
+    "signal" | "stallTimeoutMs" | "onInterrupt" | "maxBytes" | "diagnostics" | "context"
+  > = {},
 ): Promise<RetainedVideoFrame> {
   let pixels: Uint8Array | null = null
 
   try {
+    options.diagnostics?.enter("decoded-frame-copy", options.context)
     const copyOptions = { format: OWNED_PIXEL_FORMAT }
     throwIfAborted(options.signal)
     const allocationSize = decodedVideoSampleBytes(sample, options.maxBytes)
@@ -167,7 +175,7 @@ export async function detachDecodedVideoSample(
     }
   } catch (error) {
     pixels = null
-    throw error
+    throw options.diagnostics?.failure(error) ?? error
   } finally {
     sample.close()
   }
@@ -199,17 +207,25 @@ export async function emitRetainedVideoFrame(
   timestamp: number,
   duration: number,
   add: (sample: VideoSample) => PromiseLike<void>,
-  options: Pick<CollectionOptions, "signal" | "stallTimeoutMs" | "onInterrupt"> = {},
+  options: Pick<
+    CollectionOptions,
+    "signal" | "stallTimeoutMs" | "onInterrupt" | "diagnostics" | "context"
+  > = {},
 ) {
-  const emitted = createVideoSampleFromRetainedFrame(frame, timestamp, duration)
+  options.diagnostics?.enter("encoding-sample-creation", options.context)
+  let emitted: VideoSample | undefined
   try {
+    emitted = createVideoSampleFromRetainedFrame(frame, timestamp, duration)
+    options.diagnostics?.enter("video-sample-add", options.context)
     await waitForMediaOperation(add(emitted), {
       signal: options.signal,
       timeoutMs: options.stallTimeoutMs,
       onInterrupt: options.onInterrupt,
     })
+  } catch (error) {
+    throw options.diagnostics?.failure(error) ?? error
   } finally {
-    emitted.close()
+    emitted?.close()
   }
 }
 
@@ -219,8 +235,13 @@ export async function* readDecodedVideoSamples<T extends DecodedVideoSample>(
   options: CollectionOptions = {},
 ) {
   const iterator = samples[Symbol.asyncIterator]()
+  let sourceFrameIndex = options.context?.sourceFrameIndex ?? 0
   try {
     while (true) {
+      options.diagnostics?.enter(options.decodeStage ?? "range-decode-seek", {
+        ...options.context,
+        sourceFrameIndex,
+      })
       throwIfAborted(options.signal)
       const pending = Promise.resolve(iterator.next())
       let next: IteratorResult<T>
@@ -241,7 +262,10 @@ export async function* readDecodedVideoSamples<T extends DecodedVideoSample>(
       }
       if (next.done) return
       yield next.value
+      sourceFrameIndex++
     }
+  } catch (error) {
+    throw options.diagnostics?.failure(error) ?? error
   } finally {
     if (iterator.return) await waitForMediaCleanup(iterator.return())
   }
@@ -265,6 +289,10 @@ export async function collectDecodedVideoRange<T extends DecodedVideoSample>(
       const frame = await detachDecodedVideoSample(sample, {
         ...options,
         maxBytes: maxBytes - storage.retainedBytes,
+        context: {
+          ...options.context,
+          sourceFrameIndex: (options.context?.sourceFrameIndex ?? 0) + storage.frames.length,
+        },
       })
       storage.retain(frame, maxBytes)
     }

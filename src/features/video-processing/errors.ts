@@ -1,3 +1,5 @@
+import type { ProcessingSnapshot } from "./processing-diagnostics"
+
 export const PROCESSING_ERROR_CODES = [
   "input-too-large",
   "output-too-large",
@@ -21,6 +23,7 @@ export type ProcessingErrorCode = (typeof PROCESSING_ERROR_CODES)[number]
 
 export class ProcessingError extends Error {
   readonly code: ProcessingErrorCode
+  diagnostic?: ProcessingSnapshot
 
   constructor(code: ProcessingErrorCode, message: string, options?: ErrorOptions) {
     super(message, options)
@@ -37,17 +40,25 @@ export function throwIfAborted(signal?: AbortSignal) {
   }
 }
 
-export function toProcessingError(error: unknown) {
-  if (error instanceof ProcessingError) return error
+export function toProcessingError(
+  error: unknown,
+  diagnostic?: ProcessingSnapshot,
+): ProcessingError {
+  if (error instanceof ProcessingError) {
+    error.diagnostic ??= diagnostic
+    return error
+  }
   if (error instanceof DOMException && error.name === "AbortError") {
-    return new ProcessingError("canceled", "Local video processing was canceled.", { cause: error })
+    return toProcessingError(
+      new ProcessingError("canceled", "Local video processing was canceled.", { cause: error }),
+      diagnostic,
+    )
   }
 
-  return new ProcessingError(
-    "processing-failed",
-    "Local video processing could not be completed.",
-    {
+  return toProcessingError(
+    new ProcessingError("processing-failed", "Local video processing could not be completed.", {
       cause: error,
-    },
+    }),
+    diagnostic,
   )
 }

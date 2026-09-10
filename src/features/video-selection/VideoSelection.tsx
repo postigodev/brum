@@ -6,7 +6,8 @@ import {
   ProcessingError,
   readVideoTrackDuration,
 } from "#/features/video-processing"
-
+import { toProcessingError } from "../video-processing/errors"
+import type { ProcessingSnapshot } from "../video-processing/processing-diagnostics"
 import {
   createExtensionPlan,
   DURATION_TARGETS,
@@ -15,6 +16,7 @@ import {
   type SpeedPreset,
   type TargetMode,
 } from "./extension-plan"
+import { formatProcessingDebug, inspectionDiagnostic } from "./processing-debug"
 import { outputFilename, processingErrorMessage } from "./processing-ui"
 
 type MetadataState =
@@ -63,6 +65,12 @@ export function VideoSelection() {
   const [error, setError] = useState<string | null>(null)
   const [status, setStatus] = useState("No video selected.")
   const [processing, setProcessing] = useState(false)
+  const [debug, setDebug] = useState(false)
+  const [progress, setProgress] = useState<ProcessingSnapshot | null>(null)
+  const [diagnosticError, setDiagnosticError] = useState<ProcessingError | null>(null)
+  useEffect(() => {
+    setDebug(new URLSearchParams(window.location.search).get("debug") === "1")
+  }, [])
   const [shareAvailable, setShareAvailable] = useState(false)
   const [targetMode, setTargetMode] = useState<TargetMode>("duration")
   const [targetValue, setTargetValue] = useState<number | null>(null)
@@ -109,6 +117,7 @@ export function VideoSelection() {
       })
       .catch((caught: unknown) => {
         if (controller.signal.aborted) return
+        setDiagnosticError(inspectionDiagnostic(caught))
         setMetadata({ status: "error" })
         setTargetValue(null)
         setError(
@@ -139,6 +148,8 @@ export function VideoSelection() {
   }, [])
 
   function resetProcessing() {
+    setProgress(null)
+    setDiagnosticError(null)
     abortRef.current?.abort()
     abortRef.current = null
     setProcessing(false)
@@ -243,6 +254,8 @@ export function VideoSelection() {
 
     const controller = new AbortController()
     abortRef.current = controller
+    setProgress(null)
+    setDiagnosticError(null)
     setProcessing(true)
     setResult(null)
     setError(null)
@@ -251,12 +264,18 @@ export function VideoSelection() {
     try {
       const nextResult = await createBoomerangVideo(selectedFile, plan, {
         signal: controller.signal,
+        onProgress: debug
+          ? (snapshot) => {
+              if (abortRef.current === controller) setProgress(snapshot)
+            }
+          : undefined,
       })
       if (abortRef.current !== controller) return
       setResult(nextResult)
       setStatus(`Video ready. ${formatDuration(nextResult.duration)} created locally.`)
     } catch (caught) {
       if (abortRef.current !== controller) return
+      setDiagnosticError(toProcessingError(caught))
       if (caught instanceof ProcessingError) {
         if (caught.code === "canceled") {
           setStatus("Boomerang creation canceled. The original video is unchanged.")
@@ -405,6 +424,13 @@ export function VideoSelection() {
           <p className="tool-error" role="alert">
             {error}
           </p>
+        ) : null}
+        {debug && (progress || diagnosticError) ? (
+          <details className="tool-diagnostics" open>
+            <summary>Processing diagnostics</summary>
+            <p>Local report · indices start at 0</p>
+            <pre>{formatProcessingDebug(progress, diagnosticError, selectedFile?.name)}</pre>
+          </details>
         ) : null}
         <p className="visually-hidden" aria-live="polite">
           {status}

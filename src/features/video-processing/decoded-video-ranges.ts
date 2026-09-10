@@ -27,7 +27,10 @@ export async function collectVideoMetadata(
   let rangeBytes = 0
   const maxBytes = options.maxBytes ?? MAX_RETAINED_DECODED_VIDEO_BYTES
 
-  for await (const sample of readDecodedVideoSamples(samples, options)) {
+  for await (const sample of readDecodedVideoSamples(samples, {
+    ...options,
+    decodeStage: "metadata-scan",
+  })) {
     try {
       throwIfAborted(options.signal)
       const bytes = decodedVideoSampleBytes(sample, maxBytes)
@@ -48,6 +51,7 @@ export async function collectVideoMetadata(
       })
       range.end++
       rangeBytes += bytes
+      options.diagnostics?.advance("metadataFrames")
     } finally {
       sample.close()
     }
@@ -70,20 +74,35 @@ export async function emitVideoRanges(
   let activeRange: VideoRange | undefined
   let retained: RetainedVideoFrame[] = []
   try {
-    for (const entry of timeline) {
+    for (const [outputFrameIndex, entry] of timeline.entries()) {
       throwIfAborted(options.signal)
       const frameMetadata = metadata.frames[entry.sourceIndex]
       const range = frameMetadata && metadata.ranges[frameMetadata.rangeIndex]
       if (!range) throw new Error("Boomerang timeline referenced an unknown source frame.")
+      const context = {
+        rangeIndex: frameMetadata.rangeIndex,
+        sourceFrameIndex: entry.sourceIndex,
+        outputFrameIndex,
+        direction: entry.direction,
+      }
       if (range !== activeRange) {
         releaseRetainedVideoFrames(retained)
         const first = metadata.frames[range.start]
         if (!first) throw new Error("Video range has no starting frame.")
+        options.diagnostics?.enter("range-decode-seek", {
+          ...context,
+          sourceFrameIndex: range.start,
+        })
         retained = await collectDecodedVideoRange(
           sink.samples(first.timestamp, metadata.frames[range.end]?.timestamp),
-          options,
+          {
+            ...options,
+            decodeStage: "range-decode-seek",
+            context: { ...context, sourceFrameIndex: range.start },
+          },
         )
         activeRange = range
+        options.diagnostics?.enter("range-validation", context)
         if (
           retained.length !== range.end - range.start ||
           retained.some(
@@ -95,11 +114,16 @@ export async function emitVideoRanges(
             "Decoded range does not match the source presentation timeline.",
           )
         }
+        options.diagnostics?.advance("decodedRanges")
       }
       const frame = retained[entry.sourceIndex - range.start]
       if (!frame) throw new Error("Decoded range is missing a source frame.")
+      options.diagnostics?.enter("encoding-sample-creation", context)
       await emit(frame, entry)
+      options.diagnostics?.advance("encodedFrames")
     }
+  } catch (error) {
+    throw options.diagnostics?.failure(error) ?? error
   } finally {
     releaseRetainedVideoFrames(retained)
   }
