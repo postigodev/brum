@@ -12,12 +12,8 @@ import {
 import type { ExtensionPlan } from "#/features/video-selection/extension-plan"
 
 import { createBoomerangTimeline } from "./boomerang-timeline"
-import {
-  collectDecodedVideoSamples,
-  emitRetainedVideoFrame,
-  type RetainedVideoFrame,
-  releaseRetainedVideoFrames,
-} from "./decoded-video-buffer"
+import { emitRetainedVideoFrame } from "./decoded-video-buffer"
+import { collectVideoMetadata, emitVideoRanges } from "./decoded-video-ranges"
 import { ProcessingError, throwIfAborted, toProcessingError } from "./errors"
 import { inspectMedia } from "./inspect-media"
 import { assertActualOutputSize, assertEstimatedOutputSize, assertInputSize } from "./limits"
@@ -26,49 +22,10 @@ import { assertPlanMatchesSource } from "./processing-validation"
 import type { BoomerangResult, ProcessingOptions } from "./types"
 import { verifyBoomerangOutput } from "./verify-boomerang"
 import {
-  type AvcEncodingConfig,
   assertAvcEncoderAvailable,
   assertVideoDecoderAvailable,
   createAvcEncodingConfig,
 } from "./video-capabilities"
-
-async function decodeVideoFrames(
-  file: File,
-  encodingConfig: AvcEncodingConfig,
-  codedWidth: number,
-  codedHeight: number,
-  signal?: AbortSignal,
-) {
-  const input = new Input({ formats: [MP4], source: new BlobSource(file) })
-
-  try {
-    throwIfAborted(signal)
-    const videoTracks = await input.getVideoTracks()
-    const videoTrack = videoTracks[0]
-    if (!videoTrack) {
-      throw new ProcessingError("unsupported-track-layout", "The MP4 has no video track.")
-    }
-
-    await assertVideoDecoderAvailable(videoTrack)
-    await assertAvcEncoderAvailable(encodingConfig, codedWidth, codedHeight)
-    throwIfAborted(signal)
-    const sink = new VideoSampleSink(videoTrack)
-    const frames = await collectDecodedVideoSamples(sink.samples(), {
-      signal,
-      onInterrupt: () => input.dispose(),
-    })
-
-    if (frames.length === 0) {
-      throw new ProcessingError(
-        "unsupported-timeline",
-        "The video track contains no decoded frames.",
-      )
-    }
-    return frames
-  } finally {
-    input.dispose()
-  }
-}
 
 function sourceVideoBitrate(encodedByteLength: number, sourceDuration: number) {
   return Math.max(100_000, Math.round((encodedByteLength * 8) / sourceDuration))
@@ -82,7 +39,7 @@ export async function createBoomerangVideo(
   const { signal } = options
   let output: Output<Mp4OutputFormat, BufferTarget> | null = null
   let outputCancellation: Promise<void> | null = null
-  let retainedFrames: RetainedVideoFrame[] = []
+  let input: Input | null = null
 
   function cancelActiveOutput() {
     if (!output) return outputCancellation
@@ -94,6 +51,7 @@ export async function createBoomerangVideo(
   }
 
   function interruptActiveOutput() {
+    input?.dispose()
     void cancelActiveOutput()
   }
 
@@ -109,15 +67,29 @@ export async function createBoomerangVideo(
     )
     assertEstimatedOutputSize(encodingBitrate, plan.outputDuration)
     const encodingConfig = createAvcEncodingConfig(encodingBitrate)
-    retainedFrames = await decodeVideoFrames(
-      file,
-      encodingConfig,
-      source.video.codedWidth,
-      source.video.codedHeight,
+    input = new Input({ formats: [MP4], source: new BlobSource(file) })
+    const [videoTrack] = await waitForMediaOperation(input.getVideoTracks(), {
       signal,
+      onInterrupt: interruptActiveOutput,
+    })
+    if (!videoTrack)
+      throw new ProcessingError("unsupported-track-layout", "The MP4 has no video track.")
+    await waitForMediaOperation(assertVideoDecoderAvailable(videoTrack), {
+      signal,
+      onInterrupt: interruptActiveOutput,
+    })
+    await waitForMediaOperation(
+      assertAvcEncoderAvailable(encodingConfig, source.video.codedWidth, source.video.codedHeight),
+      { signal, onInterrupt: interruptActiveOutput },
     )
+    throwIfAborted(signal)
+    const sink = new VideoSampleSink(videoTrack)
+    const metadata = await collectVideoMetadata(sink.samples(), {
+      signal,
+      onInterrupt: interruptActiveOutput,
+    })
     const timeline = createBoomerangTimeline(
-      retainedFrames,
+      metadata.frames,
       source.video.duration,
       plan.outputDuration,
       plan.speedMultiplier,
@@ -132,19 +104,22 @@ export async function createBoomerangVideo(
       onInterrupt: interruptActiveOutput,
     })
 
-    for (const entry of timeline) {
-      throwIfAborted(signal)
-      const sourceFrame = retainedFrames[entry.sourceIndex]
-      if (!sourceFrame) throw new Error("Boomerang timeline referenced an unknown source frame.")
-
-      await emitRetainedVideoFrame(
-        sourceFrame,
-        entry.timestamp,
-        entry.duration,
-        (emitted) => videoSource.add(emitted),
-        { signal, onInterrupt: interruptActiveOutput },
-      )
-    }
+    await emitVideoRanges(
+      sink,
+      metadata,
+      timeline,
+      (frame, entry) =>
+        emitRetainedVideoFrame(
+          frame,
+          entry.timestamp,
+          entry.duration,
+          (emitted) => videoSource.add(emitted),
+          { signal, onInterrupt: interruptActiveOutput },
+        ),
+      { signal, onInterrupt: interruptActiveOutput },
+    )
+    input.dispose()
+    input = null
 
     videoSource.close()
     throwIfAborted(signal)
@@ -178,6 +153,6 @@ export async function createBoomerangVideo(
     if (cancellation) await waitForMediaCleanup(cancellation)
     throw toProcessingError(error)
   } finally {
-    releaseRetainedVideoFrames(retainedFrames)
+    input?.dispose()
   }
 }

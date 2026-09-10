@@ -1,9 +1,10 @@
 import { VideoSample } from "mediabunny"
 
-import { ProcessingError } from "./errors"
+import { ProcessingError, throwIfAborted } from "./errors"
 import { waitForMediaCleanup, waitForMediaOperation } from "./media-operation"
 
-export const MAX_RETAINED_DECODED_VIDEO_BYTES = 256 * 1024 * 1024
+export const MAX_RETAINED_DECODED_VIDEO_BYTES = 32 * 1024 * 1024
+export const MAX_RETAINED_DECODED_VIDEO_FRAMES = 8
 // A packed format makes ownership and retained-byte accounting deterministic across decoders.
 const OWNED_PIXEL_FORMAT = "RGBA" as const
 
@@ -39,7 +40,7 @@ export type RetainedVideoFrame = {
   colorSpace: VideoColorSpaceInit
 }
 
-type CollectionOptions = {
+export type CollectionOptions = {
   signal?: AbortSignal
   maxBytes?: number
   stallTimeoutMs?: number
@@ -50,8 +51,17 @@ type CollectionOptions = {
 function memoryError() {
   return new ProcessingError(
     "decoded-video-memory-exceeded",
-    "The decoded video exceeds the safe local memory budget.",
+    "The decoded working set exceeds the safe local memory budget.",
   )
+}
+
+export function decodedVideoSampleBytes(
+  sample: DecodedVideoSample,
+  maxBytes = MAX_RETAINED_DECODED_VIDEO_BYTES,
+) {
+  const bytes = sample.allocationSize({ format: OWNED_PIXEL_FORMAT })
+  if (bytes <= 0 || !isRetainedVideoFrameWithinBudget(0, bytes, maxBytes)) throw memoryError()
+  return bytes
 }
 
 function retainedColorSpace(sample: DecodedVideoSample): VideoColorSpaceInit {
@@ -124,14 +134,14 @@ export class RetainedVideoFrameStorage {
 
 export async function detachDecodedVideoSample(
   sample: DecodedVideoSample,
-  options: Pick<CollectionOptions, "signal" | "stallTimeoutMs" | "onInterrupt"> = {},
+  options: Pick<CollectionOptions, "signal" | "stallTimeoutMs" | "onInterrupt" | "maxBytes"> = {},
 ): Promise<RetainedVideoFrame> {
   let pixels: Uint8Array | null = null
 
   try {
     const copyOptions = { format: OWNED_PIXEL_FORMAT }
-    const allocationSize = sample.allocationSize(copyOptions)
-    if (!Number.isSafeInteger(allocationSize) || allocationSize <= 0) throw memoryError()
+    throwIfAborted(options.signal)
+    const allocationSize = decodedVideoSampleBytes(sample, options.maxBytes)
 
     pixels = new Uint8Array(allocationSize)
     const layout = await waitForMediaOperation(sample.copyTo(pixels, copyOptions), {
@@ -203,38 +213,64 @@ export async function emitRetainedVideoFrame(
   }
 }
 
-export async function collectDecodedVideoSamples<T extends DecodedVideoSample>(
+// Consumers own yielded samples. Close late results ourselves after an interrupted next().
+export async function* readDecodedVideoSamples<T extends DecodedVideoSample>(
+  samples: AsyncIterable<T>,
+  options: CollectionOptions = {},
+) {
+  const iterator = samples[Symbol.asyncIterator]()
+  try {
+    while (true) {
+      throwIfAborted(options.signal)
+      const pending = Promise.resolve(iterator.next())
+      let next: IteratorResult<T>
+      try {
+        next = await waitForMediaOperation(pending, {
+          signal: options.signal,
+          timeoutMs: options.stallTimeoutMs,
+          onInterrupt: options.onInterrupt,
+        })
+      } catch (error) {
+        void pending.then(
+          (result) => {
+            if (!result.done) result.value.close()
+          },
+          () => undefined,
+        )
+        throw error
+      }
+      if (next.done) return
+      yield next.value
+    }
+  } finally {
+    if (iterator.return) await waitForMediaCleanup(iterator.return())
+  }
+}
+
+export async function collectDecodedVideoRange<T extends DecodedVideoSample>(
   samples: AsyncIterable<T>,
   options: CollectionOptions = {},
 ) {
   const maxBytes = options.maxBytes ?? MAX_RETAINED_DECODED_VIDEO_BYTES
-  if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) throw memoryError()
-
+  if (!isRetainedVideoFrameWithinBudget(0, maxBytes) || maxBytes === 0) throw memoryError()
   const storage = options.storage ?? new RetainedVideoFrameStorage()
-  const iterator = samples[Symbol.asyncIterator]()
-  let iterationCompleted = false
 
   try {
-    while (true) {
-      const next = await waitForMediaOperation(iterator.next(), {
-        signal: options.signal,
-        timeoutMs: options.stallTimeoutMs,
-        onInterrupt: options.onInterrupt,
-      })
-      if (next.done) {
-        iterationCompleted = true
-        return storage.take()
+    for await (const sample of readDecodedVideoSamples(samples, options)) {
+      if (storage.frames.length >= MAX_RETAINED_DECODED_VIDEO_FRAMES) {
+        sample.close()
+        throw memoryError()
       }
-
-      const frame = await detachDecodedVideoSample(next.value, options)
+      // Check remaining capacity BEFORE allocating, including the frame being copied.
+      const frame = await detachDecodedVideoSample(sample, {
+        ...options,
+        maxBytes: maxBytes - storage.retainedBytes,
+      })
       storage.retain(frame, maxBytes)
     }
+    return storage.take()
   } catch (error) {
     storage.release()
     throw error
-  } finally {
-    if (!iterationCompleted && iterator.return) {
-      await waitForMediaCleanup(iterator.return())
-    }
   }
 }

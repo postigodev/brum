@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest"
 
 import {
-  collectDecodedVideoSamples,
+  collectDecodedVideoRange,
   createVideoSampleFromRetainedFrame,
   type DecodedVideoSample,
   detachDecodedVideoSample,
@@ -86,7 +86,7 @@ describe("decoded video ownership", () => {
   })
 
   it("accounts for the actual owned allocation instead of frame dimensions", async () => {
-    const [retained] = await collectDecodedVideoSamples(
+    const [retained] = await collectDecodedVideoRange(
       yieldSamples([sample({ width: 100, height: 100, allocationSize: 7 })]),
       { maxBytes: 7 },
     )
@@ -95,14 +95,57 @@ describe("decoded video ownership", () => {
     releaseRetainedVideoFrames(retained ? [retained] : [])
   })
 
-  it("uses a centralized 256 MiB limit", () => {
-    expect(MAX_RETAINED_DECODED_VIDEO_BYTES).toBe(256 * 1024 * 1024)
+  it("uses a centralized 32 MiB working-set limit", () => {
+    expect(MAX_RETAINED_DECODED_VIDEO_BYTES).toBe(32 * 1024 * 1024)
     expect(isRetainedVideoFrameWithinBudget(MAX_RETAINED_DECODED_VIDEO_BYTES - 1, 1)).toBe(true)
     expect(isRetainedVideoFrameWithinBudget(MAX_RETAINED_DECODED_VIDEO_BYTES - 1, 2)).toBe(false)
   })
 
+  it("rejects an oversized frame before allocating or copying its pixels", async () => {
+    const decoded = sample({ allocationSize: MAX_RETAINED_DECODED_VIDEO_BYTES + 1 })
+    await expect(detachDecodedVideoSample(decoded)).rejects.toMatchObject({
+      code: "decoded-video-memory-exceeded",
+    })
+    expect(decoded.copyTo).not.toHaveBeenCalled()
+    expect(decoded.close).toHaveBeenCalledOnce()
+  })
+
+  it("rejects a range above eight frames even when its byte total fits", async () => {
+    const frames = Array.from({ length: 9 }, () => sample())
+    const storage = new RetainedVideoFrameStorage()
+    await expect(collectDecodedVideoRange(yieldSamples(frames), { storage })).rejects.toMatchObject(
+      { code: "decoded-video-memory-exceeded" },
+    )
+    expect(frames[8]?.copyTo).not.toHaveBeenCalled()
+    for (const frame of frames) expect(frame.close).toHaveBeenCalledOnce()
+    expect(storage.retainedBytes).toBe(0)
+    expect(storage.frames).toEqual([])
+  })
+
+  it("closes a late decoded frame after canceling the pending range read", async () => {
+    const controller = new AbortController()
+    const decoded = sample()
+    let deliver: (result: IteratorResult<DecodedVideoSample>) => void = () => undefined
+    const next = vi.fn(
+      () =>
+        new Promise<IteratorResult<DecodedVideoSample>>((resolve) => {
+          deliver = resolve
+        }),
+    )
+    const cleanup = vi.fn(async () => ({ done: true as const, value: undefined }))
+    const samples = { [Symbol.asyncIterator]: () => ({ next, return: cleanup }) }
+    const pending = collectDecodedVideoRange(samples, { signal: controller.signal })
+    controller.abort()
+    await expect(pending).rejects.toMatchObject({ code: "canceled" })
+    deliver({ done: false, value: decoded })
+    await Promise.resolve()
+    expect(decoded.close).toHaveBeenCalledOnce()
+    expect(decoded.copyTo).not.toHaveBeenCalled()
+    expect(cleanup).toHaveBeenCalledOnce()
+  })
+
   it("allows owned allocations to equal the limit exactly", async () => {
-    const frames = await collectDecodedVideoSamples(
+    const frames = await collectDecodedVideoRange(
       yieldSamples([sample({ allocationSize: 3 }), sample({ allocationSize: 5 })]),
       { maxBytes: 8 },
     )
@@ -112,7 +155,7 @@ describe("decoded video ownership", () => {
   })
 
   it("releases every retained owned buffer deterministically", async () => {
-    const frames = await collectDecodedVideoSamples(yieldSamples([sample(), sample()]))
+    const frames = await collectDecodedVideoRange(yieldSamples([sample(), sample()]))
     const retainedReferences = [...frames]
 
     releaseRetainedVideoFrames(frames)
@@ -125,18 +168,18 @@ describe("decoded video ownership", () => {
     const storage = new RetainedVideoFrameStorage()
     const first = sample({ allocationSize: 4 })
     let firstRetained: RetainedVideoFrame | undefined
-    const rejected = sample({
-      allocationSize: 1,
-      onCopy: () => {
-        ;[firstRetained] = storage.frames
-      },
+    const rejected = sample({ allocationSize: 1 })
+    rejected.allocationSize.mockImplementation(() => {
+      ;[firstRetained] = storage.frames
+      return 1
     })
 
     await expect(
-      collectDecodedVideoSamples(yieldSamples([first, rejected]), { maxBytes: 4, storage }),
+      collectDecodedVideoRange(yieldSamples([first, rejected]), { maxBytes: 4, storage }),
     ).rejects.toMatchObject({ code: "decoded-video-memory-exceeded" })
     expect(first.close).toHaveBeenCalledOnce()
     expect(rejected.close).toHaveBeenCalledOnce()
+    expect(rejected.copyTo).not.toHaveBeenCalled()
     expect(firstRetained?.pixels).toBeNull()
     expect(storage.frames).toEqual([])
     expect(storage.retainedBytes).toBe(0)
@@ -154,12 +197,30 @@ describe("decoded video ownership", () => {
     })
 
     await expect(
-      collectDecodedVideoSamples(yieldSamples([first, failed]), { storage }),
+      collectDecodedVideoRange(yieldSamples([first, failed]), { storage }),
     ).rejects.toThrow("copy failed")
     expect(first.close).toHaveBeenCalledOnce()
     expect(failed.close).toHaveBeenCalledOnce()
     expect(firstRetained?.pixels).toBeNull()
     expect(storage.frames).toEqual([])
+  })
+
+  it("releases a partial range when the decoder fails on its next frame", async () => {
+    const storage = new RetainedVideoFrameStorage()
+    const decoded = sample()
+    let retained: RetainedVideoFrame | undefined
+    async function* failedRange() {
+      yield decoded
+      ;[retained] = storage.frames
+      throw new Error("decoder failed")
+    }
+    await expect(collectDecodedVideoRange(failedRange(), { storage })).rejects.toThrow(
+      "decoder failed",
+    )
+    expect(decoded.close).toHaveBeenCalledOnce()
+    expect(retained?.pixels).toBeNull()
+    expect(storage.frames).toEqual([])
+    expect(storage.retainedBytes).toBe(0)
   })
 
   it("cancels a pending decode iteration without leaving collection pending", async () => {
@@ -181,7 +242,7 @@ describe("decoded video ownership", () => {
         }
       },
     }
-    const pending = collectDecodedVideoSamples(samples, {
+    const pending = collectDecodedVideoRange(samples, {
       signal: controller.signal,
       stallTimeoutMs: 1_000,
       onInterrupt,
