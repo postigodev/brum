@@ -40,6 +40,8 @@ function sample(options: SampleOptions = {}) {
 
   return {
     allocationSize: vi.fn(() => allocationSize),
+    format: "RGBA" as const,
+    visibleRect: { left: 0, top: 0, width, height },
     codedWidth: width,
     codedHeight: height,
     displayWidth: width,
@@ -85,14 +87,39 @@ describe("decoded video ownership", () => {
     releaseRetainedVideoFrames([retained])
   })
 
-  it("accounts for the actual owned allocation instead of frame dimensions", async () => {
-    const [retained] = await collectDecodedVideoRange(
-      yieldSamples([sample({ width: 100, height: 100, allocationSize: 7 })]),
-      { maxBytes: 7 },
-    )
+  it("does not reuse returned copy layout for packed reconstruction", async () => {
+    const decoded = sample()
+    decoded.copyTo.mockResolvedValue([
+      { offset: 0, stride: 2 },
+      { offset: 4, stride: 2 },
+    ])
+    const retained = await detachDecodedVideoSample(decoded)
+    const emitted = createVideoSampleFromRetainedFrame(retained, 0, 1)
+    try {
+      const buffer = new Uint8Array(8)
+      expect(await emitted.copyTo(buffer)).toEqual([{ offset: 0, stride: 8 }])
+      expect(retained.copyLayout).toHaveLength(2)
+    } finally {
+      emitted.close()
+      releaseRetainedVideoFrames([retained])
+    }
+  })
 
-    expect(retained && retainedVideoFrameBytes(retained)).toBe(7)
-    releaseRetainedVideoFrames(retained ? [retained] : [])
+  it("rejects an inconsistent owned buffer before reconstructing a sample", async () => {
+    const retained = await detachDecodedVideoSample(sample())
+    retained.pixels = new Uint8Array(7)
+    expect(() => createVideoSampleFromRetainedFrame(retained, 0, 1)).toThrow(
+      "RGBA buffer byteLength",
+    )
+    releaseRetainedVideoFrames([retained])
+  })
+
+  it("rejects a copy whose allocation cannot contain packed visible RGBA", async () => {
+    const decoded = sample({ width: 100, height: 100, allocationSize: 7 })
+    await expect(
+      collectDecodedVideoRange(yieldSamples([decoded]), { maxBytes: 7 }),
+    ).rejects.toThrow("RGBA buffer byteLength")
+    expect(decoded.close).toHaveBeenCalledOnce()
   })
 
   it("uses a centralized 32 MiB working-set limit", () => {
@@ -146,11 +173,11 @@ describe("decoded video ownership", () => {
 
   it("allows owned allocations to equal the limit exactly", async () => {
     const frames = await collectDecodedVideoRange(
-      yieldSamples([sample({ allocationSize: 3 }), sample({ allocationSize: 5 })]),
-      { maxBytes: 8 },
+      yieldSamples([sample({ width: 1, allocationSize: 4 }), sample({ allocationSize: 8 })]),
+      { maxBytes: 12 },
     )
 
-    expect(frames.map(retainedVideoFrameBytes)).toEqual([3, 5])
+    expect(frames.map(retainedVideoFrameBytes)).toEqual([4, 8])
     releaseRetainedVideoFrames(frames)
   })
 
@@ -166,7 +193,7 @@ describe("decoded video ownership", () => {
 
   it("rejects the next owned allocation above the limit and closes every decoder sample", async () => {
     const storage = new RetainedVideoFrameStorage()
-    const first = sample({ allocationSize: 4 })
+    const first = sample({ width: 1, allocationSize: 4 })
     let firstRetained: RetainedVideoFrame | undefined
     const rejected = sample({ allocationSize: 1 })
     rejected.allocationSize.mockImplementation(() => {

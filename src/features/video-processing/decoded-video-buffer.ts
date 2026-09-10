@@ -2,7 +2,11 @@ import { VideoSample } from "mediabunny"
 
 import { ProcessingError, throwIfAborted } from "./errors"
 import { waitForMediaCleanup, waitForMediaOperation } from "./media-operation"
-import type { ProcessingDiagnostics, ProcessingLocation } from "./processing-diagnostics"
+import type {
+  ProcessingDiagnostics,
+  ProcessingLocation,
+  RgbaFrameDiagnostic,
+} from "./processing-diagnostics"
 
 export const MAX_RETAINED_DECODED_VIDEO_BYTES = 32 * 1024 * 1024
 export const MAX_RETAINED_DECODED_VIDEO_FRAMES = 8
@@ -26,11 +30,16 @@ export type DecodedVideoSample = Pick<
   | "rotation"
   | "timestamp"
   | "close"
+  | "format"
+  | "visibleRect"
 > & { colorSpace: DecodedColorSpace }
 
 export type RetainedVideoFrame = {
   pixels: Uint8Array | null
-  layout: PlaneLayout[]
+  // Returned copy layout is diagnostic evidence only, never the layout of the owned sample.
+  copyLayout: PlaneLayout[]
+  sourcePixelFormat: VideoSample["format"]
+  sourceVisibleRect: VideoSample["visibleRect"]
   timestamp: number
   duration: number
   codedWidth: number
@@ -100,7 +109,35 @@ export function isRetainedVideoFrameWithinBudget(
 
 export function releaseRetainedVideoFrame(frame: RetainedVideoFrame) {
   frame.pixels = null
-  frame.layout = []
+  frame.copyLayout = []
+}
+
+function assertPackedRgba(frame: RetainedVideoFrame) {
+  const expectedBytes = frame.codedWidth * frame.codedHeight * 4
+  if (
+    !Number.isSafeInteger(frame.codedWidth) ||
+    frame.codedWidth <= 0 ||
+    !Number.isSafeInteger(frame.codedHeight) ||
+    frame.codedHeight <= 0 ||
+    !Number.isSafeInteger(expectedBytes) ||
+    frame.pixels?.byteLength !== expectedBytes
+  ) {
+    throw new TypeError("RGBA buffer byteLength does not match tightly packed visible dimensions.")
+  }
+}
+
+function rgbaFrameDiagnostic(frame: RetainedVideoFrame): RgbaFrameDiagnostic {
+  return {
+    pixelFormat: OWNED_PIXEL_FORMAT,
+    sourcePixelFormat: frame.sourcePixelFormat,
+    copyLayout: frame.copyLayout.map(({ offset, stride }) => ({ offset, stride })),
+    pixelBufferBytes: frame.pixels?.byteLength ?? 0,
+    codedWidth: frame.codedWidth,
+    codedHeight: frame.codedHeight,
+    displayWidth: frame.displayWidth,
+    displayHeight: frame.displayHeight,
+    sourceVisibleRect: { ...frame.sourceVisibleRect },
+  }
 }
 
 export function releaseRetainedVideoFrames(frames: RetainedVideoFrame[]) {
@@ -161,9 +198,11 @@ export async function detachDecodedVideoSample(
       },
     })
 
-    return {
+    const frame: RetainedVideoFrame = {
       pixels,
-      layout: layout.map(({ offset, stride }) => ({ offset, stride })),
+      copyLayout: layout.map(({ offset, stride }) => ({ offset, stride })),
+      sourcePixelFormat: sample.format,
+      sourceVisibleRect: { ...sample.visibleRect },
       timestamp: sample.timestamp,
       duration: sample.duration,
       codedWidth: sample.codedWidth,
@@ -173,6 +212,9 @@ export async function detachDecodedVideoSample(
       rotation: sample.rotation,
       colorSpace: retainedColorSpace(sample),
     }
+    options.diagnostics?.describeRgbaFrame(rgbaFrameDiagnostic(frame))
+    assertPackedRgba(frame)
+    return frame
   } catch (error) {
     pixels = null
     throw options.diagnostics?.failure(error) ?? error
@@ -187,10 +229,13 @@ export function createVideoSampleFromRetainedFrame(
   duration: number,
 ) {
   if (!frame.pixels) throw new Error("Retained video frame has been released.")
+  assertPackedRgba(frame)
 
   return new VideoSample(frame.pixels, {
     format: OWNED_PIXEL_FORMAT,
-    layout: frame.layout,
+    // copyTo({ format: "RGBA" }) without a custom rect/layout copies the visible region
+    // tightly packed. In 1.53.0 codedWidth/Height are visibleRect.width/height. Let the raw
+    // constructor generate its one-plane layout; never reapply source crop offsets here.
     codedWidth: frame.codedWidth,
     codedHeight: frame.codedHeight,
     timestamp,
@@ -213,10 +258,12 @@ export async function emitRetainedVideoFrame(
   > = {},
 ) {
   options.diagnostics?.enter("encoding-sample-creation", options.context)
+  options.diagnostics?.describeRgbaFrame(rgbaFrameDiagnostic(frame))
   let emitted: VideoSample | undefined
   try {
     emitted = createVideoSampleFromRetainedFrame(frame, timestamp, duration)
     options.diagnostics?.enter("video-sample-add", options.context)
+    options.diagnostics?.describeRgbaFrame(rgbaFrameDiagnostic(frame))
     await waitForMediaOperation(add(emitted), {
       signal: options.signal,
       timeoutMs: options.stallTimeoutMs,

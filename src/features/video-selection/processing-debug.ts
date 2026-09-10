@@ -33,13 +33,37 @@ export function formatProcessingDebug(
     lines.push(`metadata frames scanned: ${current.metadataFrames}`)
     lines.push(`ranges decoded: ${current.decodedRanges}`)
     lines.push(`frames encoded: ${current.encodedFrames} / ${current.outputFrames ?? "unknown"}`)
-    if (current.sourceFrames !== undefined) lines.push(`source frames: ${current.sourceFrames}`)
+    if (current.sourceFrames !== undefined)
+      lines.push(`source frame count: ${current.sourceFrames}`)
     if (current.rangeIndex !== undefined) lines.push(`range index: ${current.rangeIndex}`)
     if (current.sourceFrameIndex !== undefined)
       lines.push(`source frame index: ${current.sourceFrameIndex}`)
     if (current.outputFrameIndex !== undefined)
       lines.push(`output frame index: ${current.outputFrameIndex}`)
     if (current.direction) lines.push(`direction: ${current.direction}`)
+    const rgba = current.rgbaFrame
+    if (rgba) {
+      lines.push(`RGBA diagnostic source frame index: ${rgba.sourceFrameIndex ?? "unknown"}`)
+      lines.push(`pixel format: ${rgba.pixelFormat}`)
+      lines.push(`source pixel format: ${rgba.sourcePixelFormat ?? "unknown"}`)
+      lines.push(`copy-returned layout plane count: ${rgba.copyLayout.length}`)
+      lines.push(
+        `copy-returned layout offsets: ${rgba.copyLayout.map((plane) => plane.offset).join(", ")}`,
+      )
+      lines.push(
+        `copy-returned layout strides: ${rgba.copyLayout.map((plane) => plane.stride).join(", ")}`,
+      )
+      lines.push(
+        `reconstruction layout: default packed RGBA (1 plane, offset 0, stride ${rgba.codedWidth * 4})`,
+      )
+      lines.push(`pixel buffer byteLength: ${rgba.pixelBufferBytes}`)
+      lines.push(`codedWidth / codedHeight: ${rgba.codedWidth} / ${rgba.codedHeight}`)
+      lines.push(`displayWidth / displayHeight: ${rgba.displayWidth} / ${rgba.displayHeight}`)
+      const rect = rgba.sourceVisibleRect
+      lines.push(
+        `source visibleRect (left, top, width, height): ${rect.left}, ${rect.top}, ${rect.width}, ${rect.height}`,
+      )
+    }
   }
   return lines.join("\n")
 }

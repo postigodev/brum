@@ -35,6 +35,8 @@ vi.mock("mediabunny", async (importOriginal) => {
           if (scanning || index === 1)
             harness.check(scanning ? "metadata-scan" : "range-decode-seek")
           yield {
+            format: "RGBA",
+            visibleRect: { left: 0, top: 0, width: 2, height: 2 },
             timestamp: index / 4,
             duration: 0.25,
             codedWidth: 2,

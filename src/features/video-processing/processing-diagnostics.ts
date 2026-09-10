@@ -23,6 +23,18 @@ export type ProcessingLocation = {
   outputFrameIndex?: number
   direction?: "forward" | "reverse"
 }
+export type RgbaFrameDiagnostic = {
+  sourceFrameIndex?: number
+  pixelFormat: "RGBA"
+  sourcePixelFormat: string | null
+  copyLayout: readonly { offset: number; stride: number }[]
+  pixelBufferBytes: number
+  codedWidth: number
+  codedHeight: number
+  displayWidth: number
+  displayHeight: number
+  sourceVisibleRect: { left: number; top: number; width: number; height: number }
+}
 export type ProcessingSnapshot = ProcessingLocation & {
   stage: ProcessingStage
   metadataFrames: number
@@ -30,6 +42,7 @@ export type ProcessingSnapshot = ProcessingLocation & {
   decodedRanges: number
   sourceFrames?: number
   outputFrames?: number
+  rgbaFrame?: RgbaFrameDiagnostic
 }
 
 // One snapshot per operation, not an accumulating log. No file, pixel, or browser data.
@@ -39,6 +52,7 @@ export class ProcessingDiagnostics {
   private current: ProcessingSnapshot = { stage: "source-inspection", ...this.progress }
   private lastPublished = -Infinity
   private pendingPublish?: ReturnType<typeof setTimeout>
+  private firstRgbaFrame?: RgbaFrameDiagnostic
 
   constructor(private readonly onProgress?: (snapshot: ProcessingSnapshot) => void) {}
 
@@ -52,6 +66,7 @@ export class ProcessingDiagnostics {
       sourceFrameIndex,
       outputFrameIndex,
       direction,
+      rgbaFrame: stage === "complete" ? this.firstRgbaFrame : undefined,
     }
     this.publish(stage === "complete")
   }
@@ -65,6 +80,13 @@ export class ProcessingDiagnostics {
   setTotals(sourceFrames: number, outputFrames: number) {
     this.totals = { sourceFrames, outputFrames }
     this.current = { ...this.current, ...this.totals }
+  }
+
+  describeRgbaFrame(rgbaFrame: RgbaFrameDiagnostic) {
+    rgbaFrame = { ...rgbaFrame, sourceFrameIndex: this.current.sourceFrameIndex }
+    this.firstRgbaFrame ??= rgbaFrame
+    this.current = { ...this.current, rgbaFrame }
+    this.publish()
   }
 
   snapshot(): ProcessingSnapshot {

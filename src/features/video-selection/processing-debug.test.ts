@@ -4,6 +4,39 @@ import { ProcessingDiagnostics } from "../video-processing/processing-diagnostic
 import { formatProcessingDebug } from "./processing-debug"
 
 describe("opt-in processing report", () => {
+  it("shows copy-returned planes separately from the packed reconstruction contract", () => {
+    const tracker = new ProcessingDiagnostics()
+    tracker.enter("video-sample-add", { sourceFrameIndex: 0 })
+    tracker.setTotals(252, 1008)
+    tracker.describeRgbaFrame({
+      pixelFormat: "RGBA",
+      sourcePixelFormat: "NV12",
+      copyLayout: [
+        { offset: 0, stride: 2 },
+        { offset: 4, stride: 2 },
+      ],
+      pixelBufferBytes: 16,
+      codedWidth: 2,
+      codedHeight: 2,
+      displayWidth: 4,
+      displayHeight: 6,
+      sourceVisibleRect: { left: 2, top: 2, width: 2, height: 2 },
+    })
+    const error = tracker.failure(new TypeError("layout size is invalid"))
+    const report = formatProcessingDebug(null, error)
+    expect(report).toContain("copy-returned layout plane count: 2")
+    expect(report).toContain("copy-returned layout offsets: 0, 4")
+    expect(report).toContain("copy-returned layout strides: 2, 2")
+    expect(report).toContain("default packed RGBA (1 plane, offset 0, stride 8)")
+    expect(report).toContain("pixel buffer byteLength: 16")
+    expect(report).toContain("source frame count: 252")
+    expect(report).toContain("source frame index: 0")
+    tracker.enter("complete")
+    expect(formatProcessingDebug(tracker.snapshot(), null)).toContain(
+      "copy-returned layout plane count: 2",
+    )
+  })
+
   it("publishes the latest stage even when an operation stops making progress", () => {
     vi.useFakeTimers()
     const report = vi.fn()

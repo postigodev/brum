@@ -6,6 +6,8 @@ import { collectVideoMetadata, emitVideoRanges } from "./decoded-video-ranges"
 
 function sample(index: number): DecodedVideoSample {
   return {
+    format: "RGBA",
+    visibleRect: { left: 0, top: 0, width: 2, height: 1 },
     timestamp: index / 30,
     duration: 1 / 30,
     codedWidth: 2,

@@ -3,8 +3,37 @@
 Implemented against Mediabunny **1.53.0**. Physical iPhone Safari acceptance is **pending**.
 The tester reported that PR #31 at `5c39223` gets past the old memory error but fails with
 `processing-failed` on the original approximately 10-second/7.3 MB H.264 MP4. No underlying
-operation has been identified yet. The diagnostic revision below still requires a physical retest;
-this document does not certify acceptance or close the issue.
+operation was identified in that revision. Testing `b0955ec` subsequently located the failure at
+the first `video-sample-add`: `TypeError: layout size is invalid`, after 252 metadata frames,
+one range, and zero encoded frames. The packed-RGBA reconstruction revision below still requires
+a physical retest; this document does not certify acceptance or close the issue.
+
+## Packed RGBA reconstruction boundary
+
+WebKit's [layout validation](https://github.com/WebKit/WebKit/blob/main/Source/WebCore/Modules/webcodecs/WebCodecsVideoFrameAlgorithms.cpp)
+uses the reported error when the supplied plane count differs from the pixel format's plane count.
+That is strong evidence for investigating the reconstructed sample's layout, not proof that this
+iPhone returned multiple planes: the original report did not contain plane metadata.
+
+The [WebCodecs copy contract](https://www.w3.org/TR/webcodecs/#dictdef-videoframecopytooptions)
+uses the visible region and a tightly packed destination when `rect` and `layout` are omitted.
+RGBA is a single plane. Inspection of installed Mediabunny 1.53.0 confirmed that native-backed
+`allocationSize`/`copyTo` delegate to WebCodecs and that the raw `VideoSample` constructor creates
+the appropriate default layout when none is supplied. `toVideoFrame()` later passes that internally
+generated layout to the native constructor during encoding.
+
+Brum now reconstructs without resupplying the browser-returned layout. Before returning a detached
+frame, and again before reconstruction, it requires `pixels.byteLength === codedWidth * codedHeight * 4`.
+It does not pad an undersized copy or relabel potentially planar bytes to hide conversion failure.
+The existing 32 MiB / 8-frame budget and immediate decoder-sample cleanup remain.
+
+In Mediabunny 1.53.0, `codedWidth`/`codedHeight` expose `visibleRect.width`/`height`, not necessarily
+the backing frame's allocation dimensions. Those are the dimensions of the default copied region.
+The reconstructed sample starts at `(0, 0)`; reapplying the source crop offset would crop twice.
+Display dimensions, rotation, timing and color metadata are preserved. Browser tests verify the
+exact cropped pixels, non-square display geometry and 90-degree rotation, including a synthetic
+two-plane returned layout with valid packed pixels. The real phone source's visible rectangle is
+still unobserved; the expanded report makes it available for the next physical test.
 
 ## Temporary preview diagnostics
 
@@ -13,6 +42,13 @@ Choose the same settings that failed and create the boomerang. An open **Process
 panel below the preview shows local progress and keeps the final error report available for text
 selection/copying. Send that report back before choosing a Safari workaround. A new attempt or
 selection/settings change resets the report. Remove `debug=1` to hide the panel.
+
+The expanded report separates the **copy-returned** plane count, offsets and strides from the
+default one-plane **reconstruction** layout. It also includes source/requested pixel formats,
+buffer byte length, copied coded dimensions, display dimensions and the source visible rectangle.
+No pixel bytes are included. The first copied frame's diagnostic remains visible after success;
+on a copy/construction/add failure it describes the affected frame. `source frame count` is the
+total number of frames, while `source frame index` identifies a zero-based position.
 
 The report includes the processing code, stable stage identifier, underlying exception name and
 message, metadata-frame count, decoded-range count, encoded/output-frame counts, and zero-based
