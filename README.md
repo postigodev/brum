@@ -44,8 +44,8 @@ container or audio tail.
 A first decode pass retains only frame timing and range metadata, closing each sample immediately.
 Encoding then loads one presentation-order range at a time through Mediabunny, emits the required
 forward/reverse frames, and releases the range before loading another. Each range is limited to
-8 frames and 32 MiB of owned RGBA, checked before allocation. At 1080p this holds at most four
-frames (about 31.6 MiB), independent of source duration. Recreating an encoding sample temporarily
+8 frames and 32 MiB of owned native-format pixels, checked before allocation. A 1080p NV12
+range holds eight frames (about 23.7 MiB), independent of source duration. Recreating an encoding sample temporarily
 copies one additional frame; codec-owned surfaces and queues are additional browser-managed memory.
 Whole-source RGBA storage is no longer used.
 

@@ -8,8 +8,8 @@ describe("opt-in processing report", () => {
     const tracker = new ProcessingDiagnostics()
     tracker.enter("video-sample-add", { sourceFrameIndex: 0 })
     tracker.setTotals(252, 1008)
-    tracker.describeRgbaFrame({
-      pixelFormat: "RGBA",
+    tracker.describePixelFrame({
+      pixelFormat: "NV12",
       sourcePixelFormat: "NV12",
       copyLayout: [
         { offset: 0, stride: 2 },
@@ -27,7 +27,7 @@ describe("opt-in processing report", () => {
     expect(report).toContain("copy-returned layout plane count: 2")
     expect(report).toContain("copy-returned layout offsets: 0, 4")
     expect(report).toContain("copy-returned layout strides: 2, 2")
-    expect(report).toContain("default packed RGBA (1 plane, offset 0, stride 8)")
+    expect(report).toContain("copied native NV12 (2 planes)")
     expect(report).toContain("pixel buffer byteLength: 16")
     expect(report).toContain("source frame count: 252")
     expect(report).toContain("source frame index: 0")

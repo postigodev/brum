@@ -1,17 +1,15 @@
-import { VideoSample } from "mediabunny"
+import { VIDEO_SAMPLE_PIXEL_FORMATS, VideoSample } from "mediabunny"
 
 import { ProcessingError, throwIfAborted } from "./errors"
 import { waitForMediaCleanup, waitForMediaOperation } from "./media-operation"
 import type {
+  PixelFrameDiagnostic,
   ProcessingDiagnostics,
   ProcessingLocation,
-  RgbaFrameDiagnostic,
 } from "./processing-diagnostics"
 
 export const MAX_RETAINED_DECODED_VIDEO_BYTES = 32 * 1024 * 1024
 export const MAX_RETAINED_DECODED_VIDEO_FRAMES = 8
-// A packed format makes ownership and retained-byte accounting deterministic across decoders.
-const OWNED_PIXEL_FORMAT = "RGBA" as const
 
 type DecodedColorSpace = Pick<
   VideoSample["colorSpace"],
@@ -36,9 +34,9 @@ export type DecodedVideoSample = Pick<
 
 export type RetainedVideoFrame = {
   pixels: Uint8Array | null
-  // Returned copy layout is diagnostic evidence only, never the layout of the owned sample.
+  // Copied bytes and layout always use the same native format.
   copyLayout: PlaneLayout[]
-  sourcePixelFormat: VideoSample["format"]
+  sourcePixelFormat: NonNullable<VideoSample["format"]>
   sourceVisibleRect: VideoSample["visibleRect"]
   timestamp: number
   duration: number
@@ -72,7 +70,8 @@ export function decodedVideoSampleBytes(
   sample: DecodedVideoSample,
   maxBytes = MAX_RETAINED_DECODED_VIDEO_BYTES,
 ) {
-  const bytes = sample.allocationSize({ format: OWNED_PIXEL_FORMAT })
+  reusablePixelFormat(sample.format)
+  const bytes = sample.allocationSize()
   if (bytes <= 0 || !isRetainedVideoFrameWithinBudget(0, bytes, maxBytes)) throw memoryError()
   return bytes
 }
@@ -112,23 +111,69 @@ export function releaseRetainedVideoFrame(frame: RetainedVideoFrame) {
   frame.copyLayout = []
 }
 
-function assertPackedRgba(frame: RetainedVideoFrame) {
-  const expectedBytes = frame.codedWidth * frame.codedHeight * 4
-  if (
-    !Number.isSafeInteger(frame.codedWidth) ||
-    frame.codedWidth <= 0 ||
-    !Number.isSafeInteger(frame.codedHeight) ||
-    frame.codedHeight <= 0 ||
-    !Number.isSafeInteger(expectedBytes) ||
-    frame.pixels?.byteLength !== expectedBytes
-  ) {
-    throw new TypeError("RGBA buffer byteLength does not match tightly packed visible dimensions.")
+function representationError(message: string) {
+  return new ProcessingError("unsupported-pixel-representation", message, {
+    cause: new TypeError(message),
+  })
+}
+
+function reusablePixelFormat(format: VideoSample["format"]) {
+  if (format === null || !VIDEO_SAMPLE_PIXEL_FORMATS.includes(format)) {
+    throw representationError("Decoded pixel format cannot be detached and reconstructed.")
+  }
+  return format
+}
+
+function assertPixelLayout(frame: RetainedVideoFrame) {
+  const format = reusablePixelFormat(frame.sourcePixelFormat)
+  const width = frame.codedWidth
+  const height = frame.codedHeight
+  if (![width, height].every((value) => Number.isSafeInteger(value) && value > 0)) {
+    throw representationError("Invalid copied pixel dimensions.")
+  }
+  // WebCodecs plane geometry for Mediabunny's supported raw formats.
+  let planes: number[][]
+  if (format === "NV12") {
+    planes = [
+      [width, height],
+      [Math.ceil(width / 2) * 2, Math.ceil(height / 2)],
+    ]
+  } else if (format.startsWith("I")) {
+    const bytes = format.includes("P") ? 2 : 1
+    const subX = format.startsWith("I444") ? 1 : 2
+    const subY = format.startsWith("I420") ? 2 : 1
+    const luma = [width * bytes, height]
+    const chroma = [Math.ceil(width / subX) * bytes, Math.ceil(height / subY)]
+    planes = [luma, chroma, chroma]
+    if (format.includes("A")) planes.push(luma)
+  } else {
+    planes = [[width * 4, height]]
+  }
+  if (frame.copyLayout.length !== planes.length) {
+    throw representationError("Copied plane count does not match pixel format.")
+  }
+  const regions: { start: number; end: number }[] = []
+  for (const [index, [rowBytes, rows]] of planes.entries()) {
+    const { offset, stride } = frame.copyLayout[index]
+    const end = offset + stride * rows
+    if (
+      !Number.isSafeInteger(offset) ||
+      offset < 0 ||
+      !Number.isSafeInteger(stride) ||
+      stride < rowBytes ||
+      !Number.isSafeInteger(end) ||
+      end > (frame.pixels?.byteLength ?? 0) ||
+      regions.some((region) => offset < region.end && end > region.start)
+    ) {
+      throw representationError("Copied pixel layout exceeds its buffer or overlaps another plane.")
+    }
+    regions.push({ start: offset, end })
   }
 }
 
-function rgbaFrameDiagnostic(frame: RetainedVideoFrame): RgbaFrameDiagnostic {
+function pixelFrameDiagnostic(frame: RetainedVideoFrame): PixelFrameDiagnostic {
   return {
-    pixelFormat: OWNED_PIXEL_FORMAT,
+    pixelFormat: frame.sourcePixelFormat,
     sourcePixelFormat: frame.sourcePixelFormat,
     copyLayout: frame.copyLayout.map(({ offset, stride }) => ({ offset, stride })),
     pixelBufferBytes: frame.pixels?.byteLength ?? 0,
@@ -184,12 +229,11 @@ export async function detachDecodedVideoSample(
 
   try {
     options.diagnostics?.enter("decoded-frame-copy", options.context)
-    const copyOptions = { format: OWNED_PIXEL_FORMAT }
     throwIfAborted(options.signal)
     const allocationSize = decodedVideoSampleBytes(sample, options.maxBytes)
 
     pixels = new Uint8Array(allocationSize)
-    const layout = await waitForMediaOperation(sample.copyTo(pixels, copyOptions), {
+    const layout = await waitForMediaOperation(sample.copyTo(pixels), {
       signal: options.signal,
       timeoutMs: options.stallTimeoutMs,
       onInterrupt: () => {
@@ -201,7 +245,7 @@ export async function detachDecodedVideoSample(
     const frame: RetainedVideoFrame = {
       pixels,
       copyLayout: layout.map(({ offset, stride }) => ({ offset, stride })),
-      sourcePixelFormat: sample.format,
+      sourcePixelFormat: reusablePixelFormat(sample.format),
       sourceVisibleRect: { ...sample.visibleRect },
       timestamp: sample.timestamp,
       duration: sample.duration,
@@ -212,8 +256,8 @@ export async function detachDecodedVideoSample(
       rotation: sample.rotation,
       colorSpace: retainedColorSpace(sample),
     }
-    options.diagnostics?.describeRgbaFrame(rgbaFrameDiagnostic(frame))
-    assertPackedRgba(frame)
+    options.diagnostics?.describePixelFrame(pixelFrameDiagnostic(frame))
+    assertPixelLayout(frame)
     return frame
   } catch (error) {
     pixels = null
@@ -229,13 +273,13 @@ export function createVideoSampleFromRetainedFrame(
   duration: number,
 ) {
   if (!frame.pixels) throw new Error("Retained video frame has been released.")
-  assertPackedRgba(frame)
+  assertPixelLayout(frame)
 
   return new VideoSample(frame.pixels, {
-    format: OWNED_PIXEL_FORMAT,
-    // copyTo({ format: "RGBA" }) without a custom rect/layout copies the visible region
-    // tightly packed. In 1.53.0 codedWidth/Height are visibleRect.width/height. Let the raw
-    // constructor generate its one-plane layout; never reapply source crop offsets here.
+    format: frame.sourcePixelFormat,
+    layout: frame.copyLayout,
+    // Default copyTo copies the visible region. Mediabunny 1.53.0 coded dimensions
+    // are visible dimensions, so reconstruction rebases the crop to (0, 0).
     codedWidth: frame.codedWidth,
     codedHeight: frame.codedHeight,
     timestamp,
@@ -258,12 +302,12 @@ export async function emitRetainedVideoFrame(
   > = {},
 ) {
   options.diagnostics?.enter("encoding-sample-creation", options.context)
-  options.diagnostics?.describeRgbaFrame(rgbaFrameDiagnostic(frame))
+  options.diagnostics?.describePixelFrame(pixelFrameDiagnostic(frame))
   let emitted: VideoSample | undefined
   try {
     emitted = createVideoSampleFromRetainedFrame(frame, timestamp, duration)
     options.diagnostics?.enter("video-sample-add", options.context)
-    options.diagnostics?.describeRgbaFrame(rgbaFrameDiagnostic(frame))
+    options.diagnostics?.describePixelFrame(pixelFrameDiagnostic(frame))
     await waitForMediaOperation(add(emitted), {
       signal: options.signal,
       timeoutMs: options.stallTimeoutMs,

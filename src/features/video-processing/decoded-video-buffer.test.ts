@@ -1,3 +1,4 @@
+import { VIDEO_SAMPLE_PIXEL_FORMATS, VideoSample } from "mediabunny"
 import { describe, expect, it, vi } from "vitest"
 
 import {
@@ -65,12 +66,130 @@ async function* yieldSamples<T>(samples: readonly T[]) {
 }
 
 describe("decoded video ownership", () => {
+  it.each(VIDEO_SAMPLE_PIXEL_FORMATS)("round trips owned %s bytes and planes", async (format) => {
+    const raw = new VideoSample(new Uint8Array(512).fill(17), {
+      format,
+      codedWidth: 6,
+      codedHeight: 4,
+      timestamp: 0,
+    })
+    const expected = new Uint8Array(raw.allocationSize())
+    const layout = await raw.copyTo(expected)
+    const retained = await detachDecodedVideoSample(raw)
+    const restored = createVideoSampleFromRetainedFrame(retained, 1, 0.5)
+    try {
+      expect(restored.format).toBe(format)
+      expect(retained.copyLayout).toEqual(layout)
+      expect(retained.pixels).toEqual(expected)
+      expect(restored.allocationSize()).toBe(expected.byteLength)
+      const copied = new Uint8Array(expected.byteLength)
+      expect(await restored.copyTo(copied)).toEqual(layout)
+      expect(copied).toEqual(expected)
+    } finally {
+      restored.close()
+      releaseRetainedVideoFrames([retained])
+    }
+  })
+
+  it("preserves valid padded planes and rejects missing final-row padding", async () => {
+    const raw = new VideoSample(new Uint8Array(12).fill(17), {
+      format: "NV12",
+      codedWidth: 2,
+      codedHeight: 2,
+      timestamp: 0,
+    })
+    const retained = await detachDecodedVideoSample(raw)
+    retained.pixels = new Uint8Array(12).fill(17)
+    retained.copyLayout = [
+      { offset: 0, stride: 4 },
+      { offset: 8, stride: 4 },
+    ]
+    const restored = createVideoSampleFromRetainedFrame(retained, 0, 1)
+    try {
+      const copied = new Uint8Array(restored.allocationSize())
+      await restored.copyTo(copied)
+      expect(copied).toEqual(new Uint8Array(6).fill(17))
+      retained.pixels = new Uint8Array(10)
+      expect(() => createVideoSampleFromRetainedFrame(retained, 0, 1)).toThrow(
+        "Copied pixel layout",
+      )
+    } finally {
+      restored.close()
+      releaseRetainedVideoFrames([retained])
+    }
+  })
+
+  it("rejects truncated chroma from Mediabunny raw odd-width copying", async () => {
+    const raw = new VideoSample(new Uint8Array(64), {
+      format: "NV12",
+      codedWidth: 5,
+      codedHeight: 3,
+      timestamp: 0,
+    })
+    await expect(detachDecodedVideoSample(raw)).rejects.toMatchObject({
+      code: "unsupported-pixel-representation",
+    })
+  })
+
+  it("retains eight phone-size NV12 frames within the actual byte budget", async () => {
+    const make = () =>
+      new VideoSample(new Uint8Array(3_110_400), {
+        format: "NV12",
+        codedWidth: 1080,
+        codedHeight: 1920,
+        timestamp: 0,
+      })
+    async function* frames() {
+      for (let i = 0; i < 8; i++) yield make()
+    }
+    const retained = await collectDecodedVideoRange(frames())
+    expect(retained.reduce((sum, frame) => sum + retainedVideoFrameBytes(frame), 0)).toBe(
+      24_883_200,
+    )
+    expect(
+      retained.every(
+        (frame) => frame.sourcePixelFormat === "NV12" && frame.copyLayout.length === 2,
+      ),
+    ).toBe(true)
+    releaseRetainedVideoFrames(retained)
+    const decoded = make()
+    await expect(detachDecodedVideoSample(decoded, { maxBytes: 3_110_399 })).rejects.toMatchObject({
+      code: "decoded-video-memory-exceeded",
+    })
+  })
+
+  it.each([
+    [
+      { offset: 0, stride: 1 },
+      { offset: 4, stride: 2 },
+    ],
+    [
+      { offset: 0, stride: 2 },
+      { offset: 0, stride: 2 },
+    ],
+    [
+      { offset: 0, stride: 2 },
+      { offset: 5, stride: 2 },
+    ],
+  ])("rejects invalid native plane bounds %j", async (...layout) => {
+    const raw = new VideoSample(new Uint8Array(6), {
+      format: "NV12",
+      codedWidth: 2,
+      codedHeight: 2,
+      timestamp: 0,
+    })
+    const retained = await detachDecodedVideoSample(raw)
+    retained.copyLayout = layout
+    expect(() => createVideoSampleFromRetainedFrame(retained, 0, 1)).toThrow("Copied pixel layout")
+    releaseRetainedVideoFrames([retained])
+  })
+
   it("copies RGBA pixels and closes the decoder sample immediately", async () => {
     const decoded = sample()
     const retained = await detachDecodedVideoSample(decoded)
 
-    expect(decoded.allocationSize).toHaveBeenCalledWith({ format: "RGBA" })
-    expect(decoded.copyTo).toHaveBeenCalledWith(expect.any(Uint8Array), { format: "RGBA" })
+    expect(decoded.allocationSize).toHaveBeenCalledWith()
+    expect(decoded.copyTo).toHaveBeenCalledWith(expect.any(Uint8Array))
     expect(decoded.close).toHaveBeenCalledOnce()
     expect(retained.pixels).toEqual(new Uint8Array(8).fill(17))
     releaseRetainedVideoFrames([retained])
@@ -87,30 +206,32 @@ describe("decoded video ownership", () => {
     releaseRetainedVideoFrames([retained])
   })
 
-  it("does not reuse returned copy layout for packed reconstruction", async () => {
+  it("rejects a format and plane count mismatch and closes the sample", async () => {
     const decoded = sample()
     decoded.copyTo.mockResolvedValue([
       { offset: 0, stride: 2 },
       { offset: 4, stride: 2 },
     ])
-    const retained = await detachDecodedVideoSample(decoded)
-    const emitted = createVideoSampleFromRetainedFrame(retained, 0, 1)
-    try {
-      const buffer = new Uint8Array(8)
-      expect(await emitted.copyTo(buffer)).toEqual([{ offset: 0, stride: 8 }])
-      expect(retained.copyLayout).toHaveLength(2)
-    } finally {
-      emitted.close()
-      releaseRetainedVideoFrames([retained])
-    }
+    await expect(detachDecodedVideoSample(decoded)).rejects.toMatchObject({
+      code: "unsupported-pixel-representation",
+    })
+    expect(decoded.close).toHaveBeenCalledOnce()
+  })
+
+  it("rejects a null format before allocation or copying", async () => {
+    const decoded = { ...sample(), format: null }
+    await expect(detachDecodedVideoSample(decoded)).rejects.toMatchObject({
+      code: "unsupported-pixel-representation",
+    })
+    expect(decoded.allocationSize).not.toHaveBeenCalled()
+    expect(decoded.copyTo).not.toHaveBeenCalled()
+    expect(decoded.close).toHaveBeenCalledOnce()
   })
 
   it("rejects an inconsistent owned buffer before reconstructing a sample", async () => {
     const retained = await detachDecodedVideoSample(sample())
     retained.pixels = new Uint8Array(7)
-    expect(() => createVideoSampleFromRetainedFrame(retained, 0, 1)).toThrow(
-      "RGBA buffer byteLength",
-    )
+    expect(() => createVideoSampleFromRetainedFrame(retained, 0, 1)).toThrow("Copied pixel layout")
     releaseRetainedVideoFrames([retained])
   })
 
@@ -118,7 +239,7 @@ describe("decoded video ownership", () => {
     const decoded = sample({ width: 100, height: 100, allocationSize: 7 })
     await expect(
       collectDecodedVideoRange(yieldSamples([decoded]), { maxBytes: 7 }),
-    ).rejects.toThrow("RGBA buffer byteLength")
+    ).rejects.toThrow("Copied pixel layout")
     expect(decoded.close).toHaveBeenCalledOnce()
   })
 

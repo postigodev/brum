@@ -23,9 +23,9 @@ export type ProcessingLocation = {
   outputFrameIndex?: number
   direction?: "forward" | "reverse"
 }
-export type RgbaFrameDiagnostic = {
+export type PixelFrameDiagnostic = {
   sourceFrameIndex?: number
-  pixelFormat: "RGBA"
+  pixelFormat: string
   sourcePixelFormat: string | null
   copyLayout: readonly { offset: number; stride: number }[]
   pixelBufferBytes: number
@@ -42,7 +42,7 @@ export type ProcessingSnapshot = ProcessingLocation & {
   decodedRanges: number
   sourceFrames?: number
   outputFrames?: number
-  rgbaFrame?: RgbaFrameDiagnostic
+  pixelFrame?: PixelFrameDiagnostic
 }
 
 // One snapshot per operation, not an accumulating log. No file, pixel, or browser data.
@@ -52,7 +52,7 @@ export class ProcessingDiagnostics {
   private current: ProcessingSnapshot = { stage: "source-inspection", ...this.progress }
   private lastPublished = -Infinity
   private pendingPublish?: ReturnType<typeof setTimeout>
-  private firstRgbaFrame?: RgbaFrameDiagnostic
+  private firstPixelFrame?: PixelFrameDiagnostic
 
   constructor(private readonly onProgress?: (snapshot: ProcessingSnapshot) => void) {}
 
@@ -66,7 +66,7 @@ export class ProcessingDiagnostics {
       sourceFrameIndex,
       outputFrameIndex,
       direction,
-      rgbaFrame: stage === "complete" ? this.firstRgbaFrame : undefined,
+      pixelFrame: stage === "complete" ? this.firstPixelFrame : undefined,
     }
     this.publish(stage === "complete")
   }
@@ -82,10 +82,10 @@ export class ProcessingDiagnostics {
     this.current = { ...this.current, ...this.totals }
   }
 
-  describeRgbaFrame(rgbaFrame: RgbaFrameDiagnostic) {
-    rgbaFrame = { ...rgbaFrame, sourceFrameIndex: this.current.sourceFrameIndex }
-    this.firstRgbaFrame ??= rgbaFrame
-    this.current = { ...this.current, rgbaFrame }
+  describePixelFrame(pixelFrame: PixelFrameDiagnostic) {
+    pixelFrame = { ...pixelFrame, sourceFrameIndex: this.current.sourceFrameIndex }
+    this.firstPixelFrame ??= pixelFrame
+    this.current = { ...this.current, pixelFrame }
     this.publish()
   }
 

@@ -5,35 +5,30 @@ The tester reported that PR #31 at `5c39223` gets past the old memory error but 
 `processing-failed` on the original approximately 10-second/7.3 MB H.264 MP4. No underlying
 operation was identified in that revision. Testing `b0955ec` subsequently located the failure at
 the first `video-sample-add`: `TypeError: layout size is invalid`, after 252 metadata frames,
-one range, and zero encoded frames. The packed-RGBA reconstruction revision below still requires
-a physical retest; this document does not certify acceptance or close the issue.
+one range, and zero encoded frames. The next physical test of `48f6958` failed the explicit
+RGBA buffer invariant: source NV12, two planes at offsets 0 / 2073600 and strides 1080 / 1080,
+3,110,400 bytes for 1080x1920. Those bytes are NV12, not RGBA. Physical acceptance remains pending.
 
-## Packed RGBA reconstruction boundary
+## Native pixel reconstruction boundary
 
-WebKit's [layout validation](https://github.com/WebKit/WebKit/blob/main/Source/WebCore/Modules/webcodecs/WebCodecsVideoFrameAlgorithms.cpp)
-uses the reported error when the supplied plane count differs from the pixel format's plane count.
-That is strong evidence for investigating the reconstructed sample's layout, not proof that this
-iPhone returned multiple planes: the original report did not contain plane metadata.
+Brum now calls `allocationSize()` and `copyTo(pixels)` without requesting conversion, retaining
+`sample.format`, returned plane layout, and owned bytes together. Reconstruction passes that same
+format and layout to the raw `VideoSample` constructor. No decoder surfaces survive detachment.
+The installed Mediabunny 1.53.0 delegates these calls to native VideoFrame; avoiding the conversion
+request removes the incorrect assumption observed on the physical iPhone.
+
+Validation checks the supported raw format, plane count, row size, byte bounds and plane overlap
+before returning the detached frame and again before reconstruction. Null/unknown formats and
+inconsistent representations fail with `unsupported-pixel-representation`, preserving the cause.
+All public Mediabunny raw formats are covered, including NV12, planar YUV, alpha/high-bit-depth
+variants and packed RGB. Mediabunny's raw-buffer copy truncates chroma for odd widths; incomplete
+copies are explicitly rejected rather than relabeled or padded. No conversion fallback was added.
 
 The [WebCodecs copy contract](https://www.w3.org/TR/webcodecs/#dictdef-videoframecopytooptions)
-uses the visible region and a tightly packed destination when `rect` and `layout` are omitted.
-RGBA is a single plane. Inspection of installed Mediabunny 1.53.0 confirmed that native-backed
-`allocationSize`/`copyTo` delegate to WebCodecs and that the raw `VideoSample` constructor creates
-the appropriate default layout when none is supplied. `toVideoFrame()` later passes that internally
-generated layout to the native constructor during encoding.
-
-Brum now reconstructs without resupplying the browser-returned layout. Before returning a detached
-frame, and again before reconstruction, it requires `pixels.byteLength === codedWidth * codedHeight * 4`.
-It does not pad an undersized copy or relabel potentially planar bytes to hide conversion failure.
-The existing 32 MiB / 8-frame budget and immediate decoder-sample cleanup remain.
-
-In Mediabunny 1.53.0, `codedWidth`/`codedHeight` expose `visibleRect.width`/`height`, not necessarily
-the backing frame's allocation dimensions. Those are the dimensions of the default copied region.
-The reconstructed sample starts at `(0, 0)`; reapplying the source crop offset would crop twice.
-Display dimensions, rotation, timing and color metadata are preserved. Browser tests verify the
-exact cropped pixels, non-square display geometry and 90-degree rotation, including a synthetic
-two-plane returned layout with valid packed pixels. The real phone source's visible rectangle is
-still unobserved; the expanded report makes it available for the next physical test.
+copies the visible region by default. Mediabunny 1.53.0 codedWidth/Height expose visible dimensions,
+so reconstruction rebases that copied region to (0, 0), without applying the source crop twice.
+The observed phone visible rectangle is 0,0,1080,1920. Display geometry, rotation, timing and color
+metadata remain preserved; browser coverage checks cropped pixels and rotated display geometry.
 
 ## Temporary preview diagnostics
 
@@ -44,7 +39,7 @@ selection/copying. Send that report back before choosing a Safari workaround. A 
 selection/settings change resets the report. Remove `debug=1` to hide the panel.
 
 The expanded report separates the **copy-returned** plane count, offsets and strides from the
-default one-plane **reconstruction** layout. It also includes source/requested pixel formats,
+same native **reconstruction** layout. It also includes source/retained pixel formats,
 buffer byte length, copied coded dimensions, display dimensions and the source visible rectangle.
 No pixel bytes are included. The first copied frame's diagnostic remains visible after success;
 on a copy/construction/add failure it describes the affected frame. `source frame count` is the
@@ -72,14 +67,14 @@ color metadata, codec settings, or cancellation semantics.
 ## Architecture and API investigation
 
 1. `VideoSampleSink.samples()` scans actual decoded presentation timestamps and durations,
-   measures `allocationSize({ format: "RGBA" })`, and immediately calls `close()`. Only timings
+   measures `allocationSize()`, and immediately calls `close()`. Only timings
    and range indices survive; this also preserves the existing handling of B-frame presentation
    order and variable frame timing without assuming packet order equals decoded order.
-2. Ranges are partitioned by actual RGBA allocation size and a fixed frame-count limit.
+2. Ranges are partitioned by actual native-format allocation size and a fixed frame-count limit.
    `VideoSampleSink.samples(startTimestamp, endTimestamp)` retrieves each range in presentation
    order. Mediabunny performs keyframe seeking, preroll decoding/discard, and B-frame handling.
    Start is inclusive and end is exclusive, using the timestamps from the initial scan.
-3. `copyTo(..., { format: "RGBA" })` detaches only that range; each decoder sample closes as
+3. `copyTo(pixels)` detaches only that range; each decoder sample closes as
    soon as the copy finishes. The unchanged boomerang timeline selects forward/reverse indices,
    speeds, complete cycles, and final partial-frame durations. A range may be reused at a turn;
    it is released before the next range loads and on completion or failure.
@@ -93,18 +88,16 @@ multiple frames. Ranges can start inside GOPs, so long GOPs increase work rather
 of retained pixels. The forward pass uses the same range mechanism for simple ownership, at the
 cost of redundant preroll decoding there too. No custom packet reversal or codec was introduced.
 
-Native `VideoSample.clone()` can retain decoder-backed surfaces. Copying native plane formats could
-reduce bytes, but introduces format/layout and cross-browser conversion variability. This change
-keeps the proven RGBA detachment and deterministic ownership from #16. Pixel-format optimization
-is optional future work, not necessary to remove whole-clip retention.
+Native `VideoSample.clone()` can retain decoder-backed surfaces; owned byte copies avoid that.
 
 ## Bound and cleanup
 
-- At most **8 retained frames and 32 MiB** of range RGBA. Both limits apply independently.
+- At most **8 retained frames and 32 MiB** of native-format range pixels. Both limits apply independently.
   The byte check includes the next copy and runs **before** allocating its `Uint8Array`.
-- At 1920x1080, a range contains at most four frames: **33,177,600 bytes (31.64 MiB)**.
+- At 1080x1920 NV12, eight frames use **24,883,200 bytes (23.73 MiB)**. RGBA still fits
+  four frames at **33,177,600 bytes (31.64 MiB)**.
 - The temporary encoding sample copies at most one more frame: at most **64 MiB** for the
-  range plus that sample in the general case, or **39.55 MiB** at 1080p. These figures are
+  range plus that sample in the general case, or **26.70 MiB** for this NV12 geometry (**39.55 MiB** for RGBA). These figures are
   application pixel ownership bounds, **not total tab/process memory bounds**.
 - Mediabunny's decoder prefetch, codec reference/reorder surfaces, conversion surfaces and encoder
   queues use additional memory. The application awaits adds and has only one active range iterator.
@@ -139,5 +132,10 @@ results using the supported H.264 MP4 path. Keep personal media out of the repos
 - Repeat several runs to assess resource reclamation, memory pressure and device heating.
 
 Safari-specific risks remain: WebKit decoder surface/reordering behavior, AVC encoder availability,
-RGBA copy/conversion costs, repeated keyframe seeks with long phone-video GOPs, mobile thermal limits,
+Native pixel reconstruction compatibility, repeated keyframe seeks with long phone-video GOPs, mobile thermal limits,
 and browser-managed memory beyond the owned range. Chromium success does not establish those results.
+
+Native-format regressions cover every public raw format in unit tests, NV12/I420/RGBA/BGRA
+through native VideoFrame reconstruction in Chromium, mismatches/null formats, actual 1080p NV12
+byte accounting, and the unchanged directional/timing/speed/cleanup suite. Physical iPhone
+encoding, repeated seeks, performance and successful output still require the next same-source test.

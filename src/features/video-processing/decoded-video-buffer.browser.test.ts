@@ -1,5 +1,5 @@
 import { VideoSample } from "mediabunny"
-import { describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 import {
   createVideoSampleFromRetainedFrame,
   detachDecodedVideoSample,
@@ -7,11 +7,41 @@ import {
 } from "./decoded-video-buffer"
 import { ProcessingDiagnostics } from "./processing-diagnostics"
 
-describe("packed RGBA reconstruction", () => {
+describe("native pixel reconstruction", () => {
   it.each([
-    false,
-    true,
-  ])("copies the visible region and reconstructs independently of returned plane metadata (multiplanar: %s)", async (multiplanar) => {
+    { format: "NV12", bytes: 24, planes: 2 },
+    { format: "I420", bytes: 24, planes: 3 },
+    { format: "RGBA", bytes: 64, planes: 1 },
+    { format: "BGRA", bytes: 64, planes: 1 },
+  ] as const)("reconstructs native $format at the encoder VideoFrame boundary", async ({
+    format,
+    bytes,
+    planes,
+  }) => {
+    const pixels = Uint8Array.from({ length: bytes }, (_, index) => index + 16)
+    const native = new VideoFrame(pixels, { format, codedWidth: 4, codedHeight: 4, timestamp: 0 })
+    const retained = await detachDecodedVideoSample(new VideoSample(native))
+    const restored = createVideoSampleFromRetainedFrame(retained, 1, 0.5)
+    try {
+      expect(retained.pixels?.byteLength).toBe(bytes)
+      expect(retained.copyLayout).toHaveLength(planes)
+      expect(restored.format).toBe(format)
+      const encodedInput = restored.toVideoFrame()
+      try {
+        expect(encodedInput.format).toBe(format)
+        const copied = new Uint8Array(encodedInput.allocationSize())
+        expect(await encodedInput.copyTo(copied)).toHaveLength(planes)
+        expect(copied).toEqual(pixels)
+      } finally {
+        encodedInput.close()
+      }
+    } finally {
+      restored.close()
+      releaseRetainedVideoFrame(retained)
+    }
+  })
+
+  it("preserves cropped pixels, geometry, rotation, timing and color", async () => {
     const pixels = new Uint8Array(4 * 4 * 4)
     for (let index = 0; index < 16; index++) pixels.set([index * 10, 30, 50, 255], index * 4)
     const backing = new VideoFrame(pixels, {
@@ -31,23 +61,12 @@ describe("packed RGBA reconstruction", () => {
     const decoded = new VideoSample(native, { rotation: 90 })
     const sourceVisibleRect = { ...decoded.visibleRect }
     // VideoSample owns this native frame; detachment closes it after copying.
-    if (multiplanar) {
-      const copy = decoded.copyTo.bind(decoded)
-      vi.spyOn(decoded, "copyTo").mockImplementation(async (destination, options) => {
-        await copy(destination, options)
-        // Correct packed pixels, but a non-reusable browser-returned layout.
-        return [
-          { offset: 0, stride: 2 },
-          { offset: 4, stride: 2 },
-        ]
-      })
-    }
     const diagnostics = new ProcessingDiagnostics()
     const retained = await detachDecodedVideoSample(decoded, { diagnostics })
     const restored = createVideoSampleFromRetainedFrame(retained, 2, 0.25)
     try {
       expect(retained.pixels?.byteLength).toBe(16)
-      expect(retained.copyLayout).toHaveLength(multiplanar ? 2 : 1)
+      expect(retained.copyLayout).toHaveLength(1)
       expect(restored.rotation).toBe(90)
       expect([restored.displayWidth, restored.displayHeight]).toEqual([4, 6])
       expect(restored.timestamp).toBe(2)
@@ -68,7 +87,7 @@ describe("packed RGBA reconstruction", () => {
       } finally {
         encodedInput.close()
       }
-      expect(diagnostics.snapshot().rgbaFrame).toMatchObject({
+      expect(diagnostics.snapshot().pixelFrame).toMatchObject({
         pixelFormat: "RGBA",
         pixelBufferBytes: 16,
         codedWidth: 2,

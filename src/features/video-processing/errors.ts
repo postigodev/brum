@@ -13,6 +13,7 @@ export const PROCESSING_ERROR_CODES = [
   "video-decoder-unavailable",
   "video-encoder-unavailable",
   "decoded-video-memory-exceeded",
+  "unsupported-pixel-representation",
   "media-stalled",
   "canceled",
   "verification-failed",

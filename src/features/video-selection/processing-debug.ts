@@ -41,25 +41,25 @@ export function formatProcessingDebug(
     if (current.outputFrameIndex !== undefined)
       lines.push(`output frame index: ${current.outputFrameIndex}`)
     if (current.direction) lines.push(`direction: ${current.direction}`)
-    const rgba = current.rgbaFrame
-    if (rgba) {
-      lines.push(`RGBA diagnostic source frame index: ${rgba.sourceFrameIndex ?? "unknown"}`)
-      lines.push(`pixel format: ${rgba.pixelFormat}`)
-      lines.push(`source pixel format: ${rgba.sourcePixelFormat ?? "unknown"}`)
-      lines.push(`copy-returned layout plane count: ${rgba.copyLayout.length}`)
+    const pixel = current.pixelFrame
+    if (pixel) {
+      lines.push(`Pixel diagnostic source frame index: ${pixel.sourceFrameIndex ?? "unknown"}`)
+      lines.push(`pixel format: ${pixel.pixelFormat}`)
+      lines.push(`source pixel format: ${pixel.sourcePixelFormat ?? "unknown"}`)
+      lines.push(`copy-returned layout plane count: ${pixel.copyLayout.length}`)
       lines.push(
-        `copy-returned layout offsets: ${rgba.copyLayout.map((plane) => plane.offset).join(", ")}`,
+        `copy-returned layout offsets: ${pixel.copyLayout.map((plane) => plane.offset).join(", ")}`,
       )
       lines.push(
-        `copy-returned layout strides: ${rgba.copyLayout.map((plane) => plane.stride).join(", ")}`,
+        `copy-returned layout strides: ${pixel.copyLayout.map((plane) => plane.stride).join(", ")}`,
       )
       lines.push(
-        `reconstruction layout: default packed RGBA (1 plane, offset 0, stride ${rgba.codedWidth * 4})`,
+        `reconstruction layout: copied native ${pixel.pixelFormat} (${pixel.copyLayout.length} planes)`,
       )
-      lines.push(`pixel buffer byteLength: ${rgba.pixelBufferBytes}`)
-      lines.push(`codedWidth / codedHeight: ${rgba.codedWidth} / ${rgba.codedHeight}`)
-      lines.push(`displayWidth / displayHeight: ${rgba.displayWidth} / ${rgba.displayHeight}`)
-      const rect = rgba.sourceVisibleRect
+      lines.push(`pixel buffer byteLength: ${pixel.pixelBufferBytes}`)
+      lines.push(`codedWidth / codedHeight: ${pixel.codedWidth} / ${pixel.codedHeight}`)
+      lines.push(`displayWidth / displayHeight: ${pixel.displayWidth} / ${pixel.displayHeight}`)
+      const rect = pixel.sourceVisibleRect
       lines.push(
         `source visibleRect (left, top, width, height): ${rect.left}, ${rect.top}, ${rect.width}, ${rect.height}`,
       )
