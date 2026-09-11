@@ -139,7 +139,9 @@ describe("VideoSelection browser workflow", () => {
       expect(report.textContent).toContain("underlying error name: OperationError")
       expect(report.textContent).toContain("underlying error message: Synthetic AVC add failure")
       expect(report.textContent).toContain("source frame index: 0")
-      expect(report.textContent).toContain("ranges decoded: 1")
+      expect(report.textContent).toContain("ranges decoded: 0")
+      expect(report.textContent).toContain("decode starts forward / reverse: 1 / 0")
+      expect(report.textContent).toContain("forwardDecode ms:")
       expect(report.textContent).not.toMatch(/diagnostic-private|stack/i)
     } else {
       expect(document.querySelector(".tool-diagnostics")).toBeNull()

@@ -41,6 +41,18 @@ export function formatProcessingDebug(
     if (current.outputFrameIndex !== undefined)
       lines.push(`output frame index: ${current.outputFrameIndex}`)
     if (current.direction) lines.push(`direction: ${current.direction}`)
+    if (current.elapsedMs !== undefined) lines.push(`elapsed ms: ${Math.round(current.elapsedMs)}`)
+    if (current.timingsMs) {
+      for (const [stage, elapsed] of Object.entries(current.timingsMs)) {
+        lines.push(`${stage} ms: ${Math.round(elapsed)}`)
+      }
+    }
+    if (current.decodedSamples !== undefined)
+      lines.push(`decoded source samples delivered: ${current.decodedSamples}`)
+    if (current.decodeStarts)
+      lines.push(
+        `decode starts forward / reverse: ${current.decodeStarts.forward} / ${current.decodeStarts.reverse}`,
+      )
     const pixel = current.pixelFrame
     if (pixel) {
       lines.push(`Pixel diagnostic source frame index: ${pixel.sourceFrameIndex ?? "unknown"}`)

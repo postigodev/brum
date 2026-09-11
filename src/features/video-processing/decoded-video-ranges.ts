@@ -4,13 +4,17 @@ import {
   collectDecodedVideoRange,
   type DecodedVideoSample,
   decodedVideoSampleBytes,
+  detachDecodedVideoSample,
+  isRetainedVideoFrameWithinBudget,
   MAX_RETAINED_DECODED_VIDEO_BYTES,
   MAX_RETAINED_DECODED_VIDEO_FRAMES,
   type RetainedVideoFrame,
   readDecodedVideoSamples,
+  releaseRetainedVideoFrame,
   releaseRetainedVideoFrames,
 } from "./decoded-video-buffer"
 import { ProcessingError, throwIfAborted } from "./errors"
+import { waitForMediaCleanup } from "./media-operation"
 
 type FrameMetadata = VideoFrameTiming & { rangeIndex: number }
 type VideoRange = { start: number; end: number }
@@ -62,7 +66,7 @@ export async function collectVideoMetadata(
   return { frames, ranges }
 }
 
-// Only one range is owned at a time, including across direction changes and repeated cycles.
+// Forward owns one detached frame; reverse owns one range. They never coexist.
 // Mediabunny seeks to the preceding keyframe and discards preroll before the requested range.
 export async function emitVideoRanges(
   sink: { samples: (start?: number, end?: number) => AsyncIterable<DecodedVideoSample> },
@@ -71,8 +75,23 @@ export async function emitVideoRanges(
   emit: (frame: RetainedVideoFrame, entry: BoomerangTimelineEntry) => Promise<void>,
   options: CollectionOptions = {},
 ) {
+  const maxBytes = options.maxBytes ?? MAX_RETAINED_DECODED_VIDEO_BYTES
+  if (!isRetainedVideoFrameWithinBudget(0, maxBytes) || maxBytes === 0) {
+    throw new ProcessingError(
+      "decoded-video-memory-exceeded",
+      "The decoded working set exceeds the safe local memory budget.",
+    )
+  }
   let activeRange: VideoRange | undefined
   let retained: RetainedVideoFrame[] = []
+  let forward: AsyncGenerator<DecodedVideoSample, void, unknown> | undefined
+  let nextForwardIndex = -1
+  const forwardOptions: CollectionOptions = { ...options, decodeStage: "forward-stream-decode" }
+  const closeForward = async () => {
+    const iterator = forward
+    forward = undefined
+    if (iterator) await waitForMediaCleanup(iterator.return(undefined))
+  }
   try {
     for (const [outputFrameIndex, entry] of timeline.entries()) {
       throwIfAborted(options.signal)
@@ -85,6 +104,37 @@ export async function emitVideoRanges(
         outputFrameIndex,
         direction: entry.direction,
       }
+      if (entry.direction === "forward") {
+        releaseRetainedVideoFrames(retained)
+        activeRange = undefined
+        forwardOptions.context = context
+        options.diagnostics?.enter("forward-stream-decode", context)
+        if (!forward || entry.sourceIndex !== nextForwardIndex) {
+          await closeForward()
+          options.diagnostics?.startDecode("forward")
+          forward = readDecodedVideoSamples(sink.samples(frameMetadata.timestamp), forwardOptions)
+        }
+        const next = await forward.next()
+        nextForwardIndex = entry.sourceIndex + 1
+        options.diagnostics?.enter("range-validation", context)
+        if (next.done || next.value.timestamp !== frameMetadata.timestamp) {
+          if (!next.done) next.value.close()
+          throw new ProcessingError(
+            "unsupported-timeline",
+            "Decoded stream does not match the source presentation timeline.",
+          )
+        }
+        const frame = await detachDecodedVideoSample(next.value, { ...options, context })
+        try {
+          options.diagnostics?.enter("encoding-sample-creation", context)
+          await emit(frame, entry)
+          options.diagnostics?.advance("encodedFrames")
+        } finally {
+          releaseRetainedVideoFrame(frame)
+        }
+        continue
+      }
+      await closeForward()
       if (range !== activeRange) {
         releaseRetainedVideoFrames(retained)
         const first = metadata.frames[range.start]
@@ -93,6 +143,7 @@ export async function emitVideoRanges(
           ...context,
           sourceFrameIndex: range.start,
         })
+        options.diagnostics?.startDecode(entry.direction)
         retained = await collectDecodedVideoRange(
           sink.samples(first.timestamp, metadata.frames[range.end]?.timestamp),
           {
@@ -126,5 +177,6 @@ export async function emitVideoRanges(
     throw options.diagnostics?.failure(error) ?? error
   } finally {
     releaseRetainedVideoFrames(retained)
+    await closeForward()
   }
 }

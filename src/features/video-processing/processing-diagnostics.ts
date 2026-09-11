@@ -8,6 +8,7 @@ export const PROCESSING_STAGES = [
   "timeline-planning",
   "output-start",
   "range-decode-seek",
+  "forward-stream-decode",
   "range-validation",
   "decoded-frame-copy",
   "encoding-sample-creation",
@@ -35,6 +36,40 @@ export type PixelFrameDiagnostic = {
   displayHeight: number
   sourceVisibleRect: { left: number; top: number; width: number; height: number }
 }
+export type ProcessingTimings = Record<
+  | "metadataScan"
+  | "forwardDecode"
+  | "reverseDecode"
+  | "frameCopy"
+  | "avcEncoding"
+  | "finalization"
+  | "verification"
+  | "other",
+  number
+>
+
+function timingCategory(snapshot: ProcessingSnapshot): keyof ProcessingTimings {
+  switch (snapshot.stage) {
+    case "metadata-scan":
+      return "metadataScan"
+    case "forward-stream-decode":
+      return "forwardDecode"
+    case "range-decode-seek":
+      return snapshot.direction === "reverse" ? "reverseDecode" : "forwardDecode"
+    case "decoded-frame-copy":
+      return "frameCopy"
+    case "encoding-sample-creation":
+    case "video-sample-add":
+      return "avcEncoding"
+    case "output-finalization":
+      return "finalization"
+    case "output-verification":
+      return "verification"
+    default:
+      return "other"
+  }
+}
+
 export type ProcessingSnapshot = ProcessingLocation & {
   stage: ProcessingStage
   metadataFrames: number
@@ -43,11 +78,29 @@ export type ProcessingSnapshot = ProcessingLocation & {
   sourceFrames?: number
   outputFrames?: number
   pixelFrame?: PixelFrameDiagnostic
+  elapsedMs?: number
+  timingsMs?: ProcessingTimings
+  decodedSamples?: number
+  decodeStarts?: { forward: number; reverse: number }
 }
 
 // One snapshot per operation, not an accumulating log. No file, pixel, or browser data.
 export class ProcessingDiagnostics {
-  private progress = { metadataFrames: 0, encodedFrames: 0, decodedRanges: 0 }
+  private progress = { metadataFrames: 0, encodedFrames: 0, decodedRanges: 0, decodedSamples: 0 }
+  private readonly startedAt = performance.now()
+  private lastStageAt = this.startedAt
+  private stoppedAt?: number
+  private timings: ProcessingTimings = {
+    metadataScan: 0,
+    forwardDecode: 0,
+    reverseDecode: 0,
+    frameCopy: 0,
+    avcEncoding: 0,
+    finalization: 0,
+    verification: 0,
+    other: 0,
+  }
+  private decodeStarts = { forward: 0, reverse: 0 }
   private totals: { sourceFrames?: number; outputFrames?: number } = {}
   private current: ProcessingSnapshot = { stage: "source-inspection", ...this.progress }
   private lastPublished = -Infinity
@@ -57,6 +110,10 @@ export class ProcessingDiagnostics {
   constructor(private readonly onProgress?: (snapshot: ProcessingSnapshot) => void) {}
 
   enter(stage: ProcessingStage, location: ProcessingLocation = {}) {
+    const now = performance.now()
+    this.timings[timingCategory(this.current)] += now - this.lastStageAt
+    this.lastStageAt = now
+    if (stage === "complete") this.stoppedAt = now
     const { rangeIndex, sourceFrameIndex, outputFrameIndex, direction } = location
     this.current = {
       ...this.progress,
@@ -71,7 +128,7 @@ export class ProcessingDiagnostics {
     this.publish(stage === "complete")
   }
 
-  advance(counter: "metadataFrames" | "encodedFrames" | "decodedRanges") {
+  advance(counter: "metadataFrames" | "encodedFrames" | "decodedRanges" | "decodedSamples") {
     this.progress[counter]++
     this.current = { ...this.current, ...this.progress }
     this.publish()
@@ -89,11 +146,24 @@ export class ProcessingDiagnostics {
     this.publish()
   }
 
+  startDecode(direction: "forward" | "reverse") {
+    this.decodeStarts[direction]++
+  }
+
   snapshot(): ProcessingSnapshot {
-    return { ...this.current }
+    const now = this.stoppedAt ?? performance.now()
+    const timingsMs = { ...this.timings }
+    timingsMs[timingCategory(this.current)] += now - this.lastStageAt
+    return {
+      ...this.current,
+      elapsedMs: now - this.startedAt,
+      timingsMs,
+      decodeStarts: { ...this.decodeStarts },
+    }
   }
 
   failure(error: unknown) {
+    this.stoppedAt ??= performance.now()
     this.publish(true)
     return toProcessingError(error, this.snapshot())
   }

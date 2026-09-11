@@ -56,7 +56,7 @@ export type CollectionOptions = {
   storage?: RetainedVideoFrameStorage
   diagnostics?: ProcessingDiagnostics
   context?: ProcessingLocation
-  decodeStage?: "metadata-scan" | "range-decode-seek"
+  decodeStage?: "metadata-scan" | "range-decode-seek" | "forward-stream-decode"
 }
 
 function memoryError() {
@@ -352,6 +352,7 @@ export async function* readDecodedVideoSamples<T extends DecodedVideoSample>(
         throw error
       }
       if (next.done) return
+      options.diagnostics?.advance("decodedSamples")
       yield next.value
       sourceFrameIndex++
     }

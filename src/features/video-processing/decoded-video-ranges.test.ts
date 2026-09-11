@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest"
-
 import { createBoomerangTimeline } from "./boomerang-timeline"
 import type { DecodedVideoSample, RetainedVideoFrame } from "./decoded-video-buffer"
 import { collectVideoMetadata, emitVideoRanges } from "./decoded-video-ranges"
+import { ProcessingDiagnostics } from "./processing-diagnostics"
 
 function sample(index: number): DecodedVideoSample {
   return {
@@ -38,6 +38,104 @@ function source(count: number) {
 }
 
 describe("bounded decoded ranges", () => {
+  it("uses one bounded sequential stream per forward pass across range boundaries", async () => {
+    const sink = source(100)
+    const metadata = await collectVideoMetadata(sink.samples(), { maxBytes: 24 })
+    const tracker = new ProcessingDiagnostics()
+    const timeline = createBoomerangTimeline(metadata.frames, 100 / 30, 40 / 3, 1)
+    const frames = new Set<RetainedVideoFrame>()
+    await emitVideoRanges(
+      sink,
+      metadata,
+      timeline,
+      async (frame, entry) => {
+        frames.add(frame)
+        if (entry.direction === "forward") {
+          expect([...frames].filter((value) => value.pixels !== null)).toEqual([frame])
+        }
+      },
+      { maxBytes: 24, diagnostics: tracker },
+    )
+    expect(tracker.snapshot().decodeStarts?.forward).toBe(2)
+    expect(tracker.snapshot().encodedFrames).toBe(timeline.length)
+    expect([...frames].every((value) => value.pixels === null)).toBe(true)
+    tracker.dispose()
+  })
+
+  it.each([
+    "complete",
+    "failure",
+    "cancellation",
+  ])("returns the forward iterator after partial output: %s", async (mode) => {
+    const metadata = await collectVideoMetadata(source(12).samples())
+    const timeline = createBoomerangTimeline(metadata.frames, 0.4, 0.1, 1)
+    const controller = new AbortController()
+    const closed = vi.fn()
+    const sink = {
+      async *samples() {
+        try {
+          for (let i = 0; i < 12; i++) yield sample(i)
+        } finally {
+          closed()
+        }
+      },
+    }
+    const frames: RetainedVideoFrame[] = []
+    const pending = emitVideoRanges(
+      sink,
+      metadata,
+      timeline,
+      async (frame) => {
+        frames.push(frame)
+        if (mode === "failure") throw new Error("encode failed")
+        if (mode === "cancellation") controller.abort()
+      },
+      { signal: controller.signal },
+    )
+    if (mode === "complete") await pending
+    else await expect(pending).rejects.toThrow(mode === "failure" ? "encode failed" : "canceled")
+    expect(closed).toHaveBeenCalledOnce()
+    expect(frames.every((frame) => frame.pixels === null)).toBe(true)
+  })
+
+  it("releases reverse range ownership on encoder failure", async () => {
+    const sink = source(12)
+    const metadata = await collectVideoMetadata(sink.samples())
+    const timeline = createBoomerangTimeline(metadata.frames, 0.4, 0.8, 1)
+    let reverseFrame: RetainedVideoFrame | undefined
+    await expect(
+      emitVideoRanges(sink, metadata, timeline, async (frame, entry) => {
+        if (entry.direction === "reverse") {
+          reverseFrame = frame
+          throw new Error("reverse failed")
+        }
+      }),
+    ).rejects.toThrow("reverse failed")
+    expect(reverseFrame?.pixels).toBeNull()
+    for (const frame of sink.decoded) expect(frame.close).toHaveBeenCalledOnce()
+  })
+
+  it("closes a wrong-timestamp forward sample without emitting it", async () => {
+    const metadata = await collectVideoMetadata(source(12).samples())
+    const timeline = createBoomerangTimeline(metadata.frames, 0.4, 0.1, 1)
+    const wrong = sample(1)
+    const emit = vi.fn()
+    await expect(
+      emitVideoRanges(
+        {
+          async *samples() {
+            yield wrong
+          },
+        },
+        metadata,
+        timeline,
+        emit,
+      ),
+    ).rejects.toMatchObject({ code: "unsupported-timeline" })
+    expect(wrong.close).toHaveBeenCalledOnce()
+    expect(emit).not.toHaveBeenCalled()
+  })
+
   it("scans only metadata and closes every sample without copying pixels", async () => {
     const sink = source(300)
     const metadata = await collectVideoMetadata(sink.samples())
@@ -104,7 +202,7 @@ describe("bounded decoded ranges", () => {
     for (const frame of sink.decoded) expect(frame.close).toHaveBeenCalledOnce()
   })
 
-  it("rejects a changed range timeline and releases the range", async () => {
+  it("rejects a truncated forward stream and releases previously emitted frames", async () => {
     const metadata = await collectVideoMetadata(source(12).samples())
     const timeline = createBoomerangTimeline(metadata.frames, 0.4, 0.8, 1)
     const sink = source(2)
@@ -112,7 +210,8 @@ describe("bounded decoded ranges", () => {
     await expect(emitVideoRanges(sink, metadata, timeline, emit)).rejects.toMatchObject({
       code: "unsupported-timeline",
     })
-    expect(emit).not.toHaveBeenCalled()
+    expect(emit).toHaveBeenCalledTimes(2)
+    expect(emit.mock.calls.every(([frame]) => frame.pixels === null)).toBe(true)
     for (const frame of sink.decoded) expect(frame.close).toHaveBeenCalledOnce()
   })
 
