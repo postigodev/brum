@@ -176,16 +176,6 @@ export function VideoSelection() {
 
     resetProcessing()
 
-    if (file.type && !file.type.startsWith("video/")) {
-      setSelectedFile(null)
-      resetTarget()
-      setMetadata({ status: "loading" })
-      setError("Choose a video file to continue.")
-      setStatus("The selected file is not a video.")
-      event.currentTarget.value = ""
-      return
-    }
-
     setError(null)
     setMetadata({ status: "loading" })
     setSelectedFile(file)
@@ -284,7 +274,7 @@ export function VideoSelection() {
           setStatus(`Boomerang creation failed: ${caught.code}.`)
         }
       } else {
-        setError("Brum could not create this boomerang. Try another MP4.")
+        setError("Brum could not create this boomerang. Try another video.")
         setStatus("Boomerang creation failed.")
       }
     } finally {
@@ -361,7 +351,7 @@ export function VideoSelection() {
           ref={inputRef}
           className="visually-hidden"
           type="file"
-          accept="video/mp4,.mp4"
+          accept="video/mp4,video/quicktime,.mp4,.mov"
           onChange={handleSelection}
           tabIndex={-1}
         />
@@ -405,7 +395,7 @@ export function VideoSelection() {
                 <path d="M12 4v11m0-11 4 4m-4-4-4 4M6 13v5.25A1.75 1.75 0 0 0 7.75 20h8.5A1.75 1.75 0 0 0 18 18.25V13" />
               </svg>
               <h2 id="selection-title">No video selected</h2>
-              <p id="selection-helper">Choose a supported MP4 from this device.</p>
+              <p id="selection-helper">Choose an MP4 or MOV from this device.</p>
             </button>
           )}
 
@@ -444,7 +434,7 @@ export function VideoSelection() {
 
           {selectedFile ? (
             <div className="tool-file-meta">
-              <span className="tool-file-icon">MP4</span>
+              <span className="tool-file-icon">VIDEO</span>
               <div className="tool-file-copy">
                 <strong>{result ? resultFilename : selectedFile.name}</strong>
                 <span>

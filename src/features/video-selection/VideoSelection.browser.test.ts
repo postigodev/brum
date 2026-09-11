@@ -3,6 +3,7 @@ import { createElement } from "react"
 import { createRoot, type Root } from "react-dom/client"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { userEvent } from "vitest/browser"
+import movFixtureUrl from "../video-processing/__fixtures__/h264-directional.mov?url"
 
 import directionalFixtureUrl from "../video-processing/__fixtures__/h264-directional.mp4?url"
 import { VideoSelection } from "./VideoSelection"
@@ -53,9 +54,13 @@ async function renderWorkflow() {
   return waitFor(() => document.querySelector<HTMLButtonElement>(".tool-empty-state"))
 }
 
-async function selectFixture(name = "h264-directional.mp4") {
-  const response = await fetch(directionalFixtureUrl)
-  const file = new File([await response.blob()], name, { type: "video/mp4" })
+async function selectFixture(
+  name = "h264-directional.mp4",
+  url = directionalFixtureUrl,
+  type = "video/mp4",
+) {
+  const response = await fetch(url)
+  const file = new File([await response.blob()], name, { type })
   const fileInput = document.querySelector<HTMLInputElement>('input[type="file"]')
   if (!fileInput) throw new Error("File input was not rendered.")
 
@@ -94,6 +99,20 @@ function outputSummary() {
 }
 
 describe("VideoSelection browser workflow", () => {
+  it.each([
+    "",
+    "application/octet-stream",
+    "video/quicktime",
+  ])("selects and processes MOV with provider MIME '%s'", async (type) => {
+    await renderWorkflow()
+    expect(document.querySelector<HTMLInputElement>('input[type="file"]')?.accept).toBe(
+      "video/mp4,video/quicktime,.mp4,.mov",
+    )
+    await selectFixture("phone.mov", movFixtureUrl, type)
+    await selectCycleTarget("2")
+    expect(await createResult("phone-brum-2x.mp4")).toBeTruthy()
+  })
+
   it.each([
     true,
     false,

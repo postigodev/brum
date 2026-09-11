@@ -2,7 +2,12 @@ import { readFile } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 
-import { assertInitialKeyPacket, assertSupportedTrackLayout, inspectMedia } from "./inspect-media"
+import {
+  assertInitialKeyPacket,
+  assertSupportedTrackLayout,
+  inspectMedia,
+  readVideoTrackDuration,
+} from "./inspect-media"
 
 async function fixture(name: string) {
   const path = fileURLToPath(new URL(`./__fixtures__/${name}`, import.meta.url))
@@ -11,6 +16,25 @@ async function fixture(name: string) {
 }
 
 describe("media inspection", () => {
+  it.each([
+    ["h264-directional.mov", "avc", 6],
+    ["hevc-video.mp4", "hevc", 1],
+    ["hevc-video.mov", "hevc", 1],
+  ] as const)("inspects %s independently of provider MIME or extension", async (name, codec, duration) => {
+    const original = await fixture(name)
+    for (const type of ["", "application/octet-stream", "video/quicktime", "video/mp4"]) {
+      const file = new File([original], "provider-file.bin", { type })
+      expect((await inspectMedia(file)).video.codec).toBe(codec)
+      expect(await readVideoTrackDuration(file)).toBeCloseTo(duration)
+    }
+  })
+
+  it("rejects invalid contents despite a MOV name and QuickTime MIME", async () => {
+    const file = new File(["not a movie"], "camera.mov", { type: "video/quicktime" })
+    await expect(inspectMedia(file)).rejects.toMatchObject({ code: "invalid-container" })
+    await expect(readVideoTrackDuration(file)).rejects.toMatchObject({ code: "invalid-container" })
+  })
+
   it("requires the first video packet to be independently decodable", () => {
     expect(() => assertInitialKeyPacket("key")).not.toThrow()
     expect(() => assertInitialKeyPacket("delta")).toThrowError(
@@ -43,7 +67,7 @@ describe("media inspection", () => {
     expect(inspection.video.encodedByteLength).toBeGreaterThan(0)
   })
 
-  it("rejects non-H.264 video", async () => {
+  it("rejects codecs outside AVC and HEVC", async () => {
     await expect(inspectMedia(await fixture("unsupported-video.mp4"))).rejects.toMatchObject({
       code: "unsupported-video-codec",
     })

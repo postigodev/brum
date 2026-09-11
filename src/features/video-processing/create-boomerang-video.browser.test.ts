@@ -1,6 +1,5 @@
-import { BlobSource, Input, MP4, VideoSampleSink } from "mediabunny"
-import { describe, expect, it } from "vitest"
-
+import { BlobSource, Input, InputVideoTrack, MP4, QTFF, VideoSampleSink } from "mediabunny"
+import { describe, expect, it, vi } from "vitest"
 import {
   createExtensionPlan,
   type ExtensionTarget,
@@ -9,8 +8,11 @@ import {
 } from "../video-selection/extension-plan"
 import fullHdFixtureUrl from "./__fixtures__/h264-1080p.mp4?url"
 import audioFixtureUrl from "./__fixtures__/h264-aac.mp4?url"
+import movFixtureUrl from "./__fixtures__/h264-directional.mov?url"
 import directionalFixtureUrl from "./__fixtures__/h264-directional.mp4?url"
 import manyFramesFixtureUrl from "./__fixtures__/h264-many-frames.mp4?url"
+import hevcMovUrl from "./__fixtures__/hevc-video.mov?url"
+import hevcMp4Url from "./__fixtures__/hevc-video.mp4?url"
 import { createBoomerangVideo } from "./create-boomerang-video"
 import { readVideoTrackDuration } from "./inspect-media"
 import { TIMELINE_TOLERANCE_SECONDS } from "./processing-validation"
@@ -160,6 +162,73 @@ function expectContinuousFrameTiming(
 }
 
 describe("generated boomerang playback", () => {
+  it("processes QuickTime AVC with unchanged forward/reverse output", async () => {
+    const source = await fixture(movFixtureUrl, "phone.mov")
+    const input = new Input({ formats: [MP4, QTFF], source: new BlobSource(source) })
+    try {
+      expect(await input.getFormat()).toBe(QTFF)
+    } finally {
+      input.dispose()
+    }
+    const { result } = await createOutput(source, { mode: "loops", value: 2 }, "original")
+    expect((await decodeStates(result.blob)).states).toEqual([...CYCLE, ...CYCLE])
+    expect(result.video.codec).toBe("avc")
+    expect(result.blob.type).toBe("video/mp4")
+  })
+
+  it.each([
+    hevcMp4Url,
+    hevcMovUrl,
+  ])("fails HEVC predictably when local decode is unavailable: %s", async (url) => {
+    const source = await fixture(url, "phone.mov")
+    const probe = vi.spyOn(InputVideoTrack.prototype, "canDecode").mockResolvedValue(false)
+    try {
+      await expect(
+        createOutput(source, { mode: "loops", value: 2 }, "original"),
+      ).rejects.toMatchObject({
+        code: "video-decoder-unavailable",
+        diagnostic: { stage: "decoder-capability-check", metadataFrames: 0 },
+      })
+      expect(probe).toHaveBeenCalled()
+    } finally {
+      probe.mockRestore()
+    }
+  })
+
+  for (const [name, url] of [
+    ["MP4", hevcMp4Url],
+    ["MOV", hevcMovUrl],
+  ]) {
+    it(`encodes supported HEVC ${name} input as AVC MP4`, async ({ skip }) => {
+      const source = await fixture(url, "phone.mov")
+      const input = new Input({ formats: [MP4, QTFF], source: new BlobSource(source) })
+      let supported = false
+      try {
+        const track = await input.getPrimaryVideoTrack()
+        expect(await track?.getCodec()).toBe("hevc")
+        supported = (await track?.canDecode()) ?? false
+      } finally {
+        input.dispose()
+      }
+      if (!supported) skip()
+      const { result, outputDuration } = await createOutput(
+        source,
+        { mode: "loops", value: 2 },
+        "original",
+      )
+      const output = new Input({ formats: [MP4], source: new BlobSource(result.blob) })
+      try {
+        expect(await output.getFormat()).toBe(MP4)
+        expect(await (await output.getPrimaryVideoTrack())?.getCodec()).toBe("avc")
+        expect(await output.getAudioTracks()).toHaveLength(0)
+      } finally {
+        output.dispose()
+      }
+      expectExactDuration((await inspectDecodedOutput(result.blob)).duration, outputDuration)
+      expect(result.verification.codec).toBe(true)
+    })
+  }
+
   it("processes 10 seconds of 1080p/30 across bounded forward/reverse ranges", async () => {
     const source = await fixture(fullHdFixtureUrl, "h264-1080p.mp4")
     // Whole-clip retention would require 2.3 GiB, far above even the old 256 MiB guard.

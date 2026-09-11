@@ -49,6 +49,18 @@ describe("boomerang verification", () => {
     })
   })
 
+  it("allows HEVC input to become AVC but rejects HEVC output", () => {
+    const source = { ...sourceVideo, codec: "hevc" as const, codecString: "hvc1.1.6.L30.90" }
+    expect(verifyBoomerangInspection(source, outputInspection(), 2, decodedTimeline).codec).toBe(
+      true,
+    )
+    const output = outputInspection()
+    output.video.codec = "hevc"
+    expect(() => verifyBoomerangInspection(source, output, 2, decodedTimeline)).toThrowError(
+      expect.objectContaining({ code: "verification-failed" }),
+    )
+  })
+
   it("rejects an output containing audio", () => {
     const output = outputInspection()
     output.audioTrackCount = 1

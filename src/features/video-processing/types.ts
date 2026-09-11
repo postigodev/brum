@@ -3,7 +3,7 @@ import type { ProcessingSnapshot } from "./processing-diagnostics"
 
 export type VideoTrackSummary = {
   kind: "video"
-  codec: "avc"
+  codec: "avc" | "hevc"
   codecString: string
   codedWidth: number
   codedHeight: number

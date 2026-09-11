@@ -60,8 +60,9 @@ function PrivacyPage() {
           <section className="policy-section" id="processing">
             <h2>How Video Processing Works</h2>
             <p>
-              When you choose a supported MP4, Brum makes the file available to browser APIs so it
-              can inspect the video track, decode frames, and create forward-and-reverse motion.
+              When you choose a supported MP4 or MOV, Brum makes the file available to browser APIs
+              so it can inspect the video track, decode frames, and create forward-and-reverse
+              motion.
             </p>
             <p>
               Processing and verification run locally on your device. The source file is unchanged,

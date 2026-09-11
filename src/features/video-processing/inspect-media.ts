@@ -5,12 +5,58 @@ import {
   type InputVideoTrack,
   MP4,
   type PacketType,
+  QTFF,
 } from "mediabunny"
 
 import { ProcessingError, throwIfAborted, toProcessingError } from "./errors"
 import { waitForMediaCleanup, waitForMediaOperation } from "./media-operation"
 import { TIMELINE_TOLERANCE_SECONDS } from "./processing-validation"
 import type { MediaInspection, VideoTrackSummary } from "./types"
+
+export const SOURCE_INPUT_FORMATS = [MP4, QTFF]
+
+async function assertReadableContainer(input: Input) {
+  try {
+    if (await input.canRead()) {
+      const format = await input.getFormat()
+      if (format === MP4 || format === QTFF) return
+    }
+  } catch (cause) {
+    throw new ProcessingError(
+      "invalid-container",
+      "The selected file is not a readable MP4 or MOV.",
+      { cause },
+    )
+  }
+  throw new ProcessingError("invalid-container", "The selected file is not a readable MP4 or MOV.")
+}
+
+async function readTracks(input: Input) {
+  try {
+    return await input.getTracks()
+  } catch (cause) {
+    throw new ProcessingError(
+      "invalid-container",
+      "The selected file's tracks could not be read.",
+      { cause },
+    )
+  }
+}
+
+async function readSupportedVideoCodec(track: InputVideoTrack) {
+  let codec: Awaited<ReturnType<InputVideoTrack["getCodec"]>>
+  try {
+    codec = await track.getCodec()
+  } catch (cause) {
+    throw new ProcessingError("unsupported-video-codec", "The video codec is not supported.", {
+      cause,
+    })
+  }
+  if (codec !== "avc" && codec !== "hevc") {
+    throw new ProcessingError("unsupported-video-codec", "Only H.264 and HEVC video are supported.")
+  }
+  return codec
+}
 
 export function assertInitialKeyPacket(type: PacketType | null) {
   if (type !== "key") {
@@ -65,15 +111,15 @@ async function inspectVideo(
   signal?: AbortSignal,
   onInterrupt?: () => void,
 ): Promise<VideoTrackSummary> {
-  const codec = await track.getCodec()
-  if (codec !== "avc") {
-    throw new ProcessingError("unsupported-video-codec", "Only H.264 video is supported.")
-  }
+  const codec = await readSupportedVideoCodec(track)
 
   const decoderConfig = await track.getDecoderConfig()
   const codecString = await track.getCodecParameterString()
   if (!decoderConfig || !codecString) {
-    throw new ProcessingError("unsupported-video-codec", "The H.264 configuration is incomplete.")
+    throw new ProcessingError(
+      "unsupported-video-codec",
+      "The video decoder configuration is incomplete.",
+    )
   }
 
   const encodedByteLength = await inspectVideoPackets(track, signal, onInterrupt)
@@ -107,7 +153,7 @@ export function assertSupportedTrackLayout(
   ) {
     throw new ProcessingError(
       "unsupported-track-layout",
-      "The MP4 must contain one video track and at most one audio track.",
+      "The video file must contain one video track and at most one audio track.",
     )
   }
 }
@@ -133,22 +179,21 @@ function assertVideoTimeline(
 
 export async function readVideoTrackDuration(blob: Blob, signal?: AbortSignal) {
   throwIfAborted(signal)
-  const input = new Input({ formats: [MP4], source: new BlobSource(blob) })
+  const input = new Input({ formats: SOURCE_INPUT_FORMATS, source: new BlobSource(blob) })
 
   try {
-    if (!(await input.canRead()) || (await input.getFormat()) !== MP4) {
-      throw new ProcessingError("invalid-container", "The selected file is not a readable MP4.")
-    }
+    await assertReadableContainer(input)
 
-    const videoTracks = await input.getVideoTracks()
+    const videoTracks = (await readTracks(input)).filter((track) => track.isVideoTrack())
     if (videoTracks.length !== 1) {
-      throw new ProcessingError("unsupported-track-layout", "The MP4 must contain one video track.")
+      throw new ProcessingError(
+        "unsupported-track-layout",
+        "The video file must contain one video track.",
+      )
     }
 
     const videoTrack = videoTracks[0] as InputVideoTrack
-    if ((await videoTrack.getCodec()) !== "avc") {
-      throw new ProcessingError("unsupported-video-codec", "Only H.264 video is supported.")
-    }
+    await readSupportedVideoCodec(videoTrack)
 
     const duration = await videoTrack.computeDuration()
     throwIfAborted(signal)
@@ -167,32 +212,22 @@ export async function readVideoTrackDuration(blob: Blob, signal?: AbortSignal) {
 
 export async function inspectMedia(blob: Blob, signal?: AbortSignal): Promise<MediaInspection> {
   throwIfAborted(signal)
-  const input = new Input({ formats: [MP4], source: new BlobSource(blob) })
+  const input = new Input({ formats: SOURCE_INPUT_FORMATS, source: new BlobSource(blob) })
 
   try {
-    if (!(await input.canRead()) || (await input.getFormat()) !== MP4) {
-      throw new ProcessingError("invalid-container", "The selected file is not a readable MP4.")
-    }
+    await assertReadableContainer(input)
 
-    const tracks = await input.getTracks()
+    const tracks = await readTracks(input)
     const videoTracks = tracks.filter((track) => track.isVideoTrack())
     const audioTracks = tracks.filter((track) => track.isAudioTrack())
     assertSupportedTrackLayout(videoTracks.length, audioTracks.length, tracks.length)
 
     const videoTrack = videoTracks[0] as InputVideoTrack
-    let videoCodec: Awaited<ReturnType<InputVideoTrack["getCodec"]>> = null
-    try {
-      videoCodec = await videoTrack.getCodec()
-    } catch {
-      // Unknown MP4 sample entries can fail while Mediabunny resolves the normalized codec.
-    }
-    if (videoCodec !== "avc") {
-      throw new ProcessingError("unsupported-video-codec", "Only H.264 video is supported.")
-    }
+    await readSupportedVideoCodec(videoTrack)
 
     const duration = await input.computeDuration(tracks)
     if (!Number.isFinite(duration) || duration <= 0) {
-      throw new ProcessingError("invalid-duration", "The MP4 duration is invalid.")
+      throw new ProcessingError("invalid-duration", "The video duration is invalid.")
     }
 
     const [videoFirstTimestamp, videoDuration] = await Promise.all([

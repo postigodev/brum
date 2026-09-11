@@ -91,7 +91,8 @@ const source = vi.hoisted(() => ({
   audioTrackCount: 0,
   video: { duration: 1, encodedByteLength: 1000, codedWidth: 2, codedHeight: 2, rotation: 0 },
 }))
-vi.mock("./inspect-media", () => ({
+vi.mock("./inspect-media", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./inspect-media")>()),
   inspectMedia: async () => {
     try {
       harness.check("source-inspection")
