@@ -43,8 +43,9 @@ cycles at the selected speed. Timing always comes from the video track rather th
 container or audio tail.
 
 A first decode pass retains only frame timing and range metadata, closing each sample immediately.
-Encoding then loads one presentation-order range at a time through Mediabunny, emits the required
-forward/reverse frames, and releases the range before loading another. Each range is limited to
+Forward emission uses one sequential Mediabunny stream per pass, detaching, encoding and releasing
+one frame at a time. Reverse emission loads and releases one presentation-order range at a time.
+Each reverse range is limited to
 8 frames and 32 MiB of owned native-format pixels, checked before allocation. A 1080p NV12
 range holds eight frames (about 23.7 MiB), independent of source duration. Recreating an encoding sample temporarily
 copies one additional frame; codec-owned surfaces and queues are additional browser-managed memory.
@@ -54,7 +55,8 @@ Brum validates the readable output, duration, codec, geometry, silence, and cont
 timeline. Chromium regressions cover directional playback at every speed and a synthetic 300-frame,
 10-second 1080p source that would require about 2.3 GiB with whole-clip retention. See
 [bounded-memory validation](docs/validation/issue-28.md) for implementation tradeoffs and the pending
-physical iPhone Safari checks.
+physical iPhone Safari checks. [Performance measurements](docs/validation/issue-32.md) describe
+the sequential forward path, timing diagnostics and pending physical-device comparison.
 
 ## Stack
 

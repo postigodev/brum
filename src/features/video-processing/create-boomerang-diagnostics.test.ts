@@ -29,11 +29,16 @@ vi.mock("mediabunny", async (importOriginal) => {
     },
     VideoSampleSink: class {
       async *samples() {
-        const scanning = harness.scans++ === 0
+        const pass = harness.scans++
+        const scanning = pass === 0
+        const decodeStage = scanning
+          ? "metadata-scan"
+          : pass % 2 === 1
+            ? "forward-stream-decode"
+            : "range-decode-seek"
         for (let index = 0; index < 4; index++) {
           // Fail the second next(), after the previous decoded-frame copy succeeded.
-          if (scanning || index === 1)
-            harness.check(scanning ? "metadata-scan" : "range-decode-seek")
+          if (scanning || index === 1) harness.check(decodeStage)
           yield {
             format: "RGBA",
             visibleRect: { left: 0, top: 0, width: 2, height: 2 },
@@ -127,6 +132,7 @@ describe("processing failure diagnostics", () => {
     "encoder-capability-check",
     "metadata-scan",
     "range-decode-seek",
+    "forward-stream-decode",
     "decoded-frame-copy",
     "encoding-sample-creation",
     "video-sample-add",
@@ -151,6 +157,7 @@ describe("processing failure diagnostics", () => {
     if (
       [
         "range-decode-seek",
+        "forward-stream-decode",
         "decoded-frame-copy",
         "encoding-sample-creation",
         "video-sample-add",
@@ -158,10 +165,12 @@ describe("processing failure diagnostics", () => {
     ) {
       expect(error.diagnostic).toMatchObject({
         rangeIndex: 0,
-        sourceFrameIndex: stage === "range-decode-seek" ? 1 : 0,
-        outputFrameIndex: 0,
+        sourceFrameIndex: ["range-decode-seek", "forward-stream-decode"].includes(stage) ? 1 : 0,
+        outputFrameIndex:
+          stage === "range-decode-seek" ? 4 : stage === "forward-stream-decode" ? 1 : 0,
         metadataFrames: 4,
-        encodedFrames: 0,
+        encodedFrames:
+          stage === "range-decode-seek" ? 4 : stage === "forward-stream-decode" ? 1 : 0,
       })
       expect(harness.canceled).toHaveBeenCalledOnce()
     }

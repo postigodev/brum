@@ -1,0 +1,200 @@
+{
+  "baseline": "b017527",
+  "fixture": "h264-1080p.mp4",
+  "before": [
+    {
+      "run": 0,
+      "warmup": true,
+      "elapsedMs": 16676.70000000298,
+      "timingsMs": {
+        "metadataScan": 182.79999999701977,
+        "forwardDecode": 4883.699999988079,
+        "reverseDecode": 6174.800000041723,
+        "frameCopy": 1023.900000050664,
+        "avcEncoding": 1815.6999999433756,
+        "finalization": 97.29999999701977,
+        "verification": 2402.2000000029802,
+        "other": 96.2999999821186
+      },
+      "submittedPackets": 5098,
+      "decodedSamples": 752,
+      "decodedRanges": 57,
+      "decodeStarts": {
+        "forward": 38,
+        "reverse": 19
+      },
+      "encodedFrames": 450,
+      "outputDuration": 15
+    },
+    {
+      "run": 1,
+      "warmup": false,
+      "elapsedMs": 26261.5,
+      "timingsMs": {
+        "metadataScan": 681.3999999910593,
+        "forwardDecode": 12963.600000023842,
+        "reverseDecode": 6321.199999943376,
+        "frameCopy": 1270.0000000447035,
+        "avcEncoding": 2700,
+        "finalization": 123.1000000089407,
+        "verification": 2175.7999999970198,
+        "other": 26.399999991059303
+      },
+      "submittedPackets": 5098,
+      "decodedSamples": 752,
+      "decodedRanges": 57,
+      "decodeStarts": {
+        "forward": 38,
+        "reverse": 19
+      },
+      "encodedFrames": 450,
+      "outputDuration": 15
+    },
+    {
+      "run": 2,
+      "warmup": false,
+      "elapsedMs": 23864.5,
+      "timingsMs": {
+        "metadataScan": 717.3000000119209,
+        "forwardDecode": 12157.299999892712,
+        "reverseDecode": 4963.100000053644,
+        "frameCopy": 1328.2000000625849,
+        "avcEncoding": 2784.4999999701977,
+        "finalization": 90.1000000089407,
+        "verification": 1800.3999999910593,
+        "other": 23.600000008940697
+      },
+      "submittedPackets": 5098,
+      "decodedSamples": 752,
+      "decodedRanges": 57,
+      "decodeStarts": {
+        "forward": 38,
+        "reverse": 19
+      },
+      "encodedFrames": 450,
+      "outputDuration": 15
+    },
+    {
+      "run": 3,
+      "warmup": false,
+      "elapsedMs": 23107.20000000298,
+      "timingsMs": {
+        "metadataScan": 622.2999999970198,
+        "forwardDecode": 11395.599999964237,
+        "reverseDecode": 5082.600000008941,
+        "frameCopy": 1273.900000050664,
+        "avcEncoding": 2622.2000000029802,
+        "finalization": 91.70000000298023,
+        "verification": 1997.5,
+        "other": 21.399999976158142
+      },
+      "submittedPackets": 5098,
+      "decodedSamples": 752,
+      "decodedRanges": 57,
+      "decodeStarts": {
+        "forward": 38,
+        "reverse": 19
+      },
+      "encodedFrames": 450,
+      "outputDuration": 15
+    }
+  ],
+  "after": [
+    {
+      "run": 0,
+      "warmup": true,
+      "elapsedMs": 15614.09999999404,
+      "timingsMs": {
+        "metadataScan": 233,
+        "forwardDecode": 68.80000001192093,
+        "reverseDecode": 5649.5000000447035,
+        "frameCopy": 1157.3999999463558,
+        "avcEncoding": 6327.0000000447035,
+        "finalization": 110.29999999701977,
+        "verification": 1945.2000000029802,
+        "other": 122.89999994635582
+      },
+      "submittedPackets": 2555,
+      "decodedSamples": 756,
+      "decodedRanges": 20,
+      "decodeStarts": {
+        "forward": 1,
+        "reverse": 20
+      },
+      "encodedFrames": 450,
+      "outputDuration": 15
+    },
+    {
+      "run": 1,
+      "warmup": false,
+      "elapsedMs": 20335.29999999702,
+      "timingsMs": {
+        "metadataScan": 660.5999999940395,
+        "forwardDecode": 104.00000005960464,
+        "reverseDecode": 6248.6999998390675,
+        "frameCopy": 1281.6000000983477,
+        "avcEncoding": 9896.600000023842,
+        "finalization": 101.79999999701977,
+        "verification": 2011.7000000029802,
+        "other": 30.299999982118607
+      },
+      "submittedPackets": 2555,
+      "decodedSamples": 756,
+      "decodedRanges": 20,
+      "decodeStarts": {
+        "forward": 1,
+        "reverse": 20
+      },
+      "encodedFrames": 450,
+      "outputDuration": 15
+    },
+    {
+      "run": 2,
+      "warmup": false,
+      "elapsedMs": 19836.60000000894,
+      "timingsMs": {
+        "metadataScan": 666.5999999940395,
+        "forwardDecode": 119.09999985992908,
+        "reverseDecode": 6140.299999892712,
+        "frameCopy": 1375.0000000596046,
+        "avcEncoding": 9417.200000181794,
+        "finalization": 114.5,
+        "verification": 1979,
+        "other": 24.900000020861626
+      },
+      "submittedPackets": 2555,
+      "decodedSamples": 756,
+      "decodedRanges": 20,
+      "decodeStarts": {
+        "forward": 1,
+        "reverse": 20
+      },
+      "encodedFrames": 450,
+      "outputDuration": 15
+    },
+    {
+      "run": 3,
+      "warmup": false,
+      "elapsedMs": 19690,
+      "timingsMs": {
+        "metadataScan": 661.2999999970198,
+        "forwardDecode": 98.09999978542328,
+        "reverseDecode": 5830.800000071526,
+        "frameCopy": 1308.5000000447035,
+        "avcEncoding": 9502.200000047684,
+        "finalization": 101.29999999701977,
+        "verification": 2161.3999999910593,
+        "other": 26.40000006556511
+      },
+      "submittedPackets": 2555,
+      "decodedSamples": 756,
+      "decodedRanges": 20,
+      "decodeStarts": {
+        "forward": 1,
+        "reverse": 20
+      },
+      "encodedFrames": 450,
+      "outputDuration": 15
+    }
+  ]
+}
