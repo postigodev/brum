@@ -8,7 +8,8 @@ export const Route = createFileRoute("/tool")({
       { title: "Create a boomerang — Brum" },
       {
         name: "description",
-        content: "Choose a short MP4 and create a silent forward-and-reverse boomerang locally.",
+        content:
+          "Choose a short MP4 or MOV and create a silent forward-and-reverse boomerang locally.",
       },
     ],
   }),

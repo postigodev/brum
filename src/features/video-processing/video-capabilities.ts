@@ -12,7 +12,7 @@ export async function assertVideoDecoderAvailable(track: Pick<InputVideoTrack, "
   if (!(await track.canDecode())) {
     throw new ProcessingError(
       "video-decoder-unavailable",
-      "This browser cannot decode the selected H.264 video.",
+      "This browser cannot decode the selected video.",
     )
   }
 }

@@ -2,7 +2,6 @@ import {
   BlobSource,
   BufferTarget,
   Input,
-  MP4,
   Mp4OutputFormat,
   Output,
   VideoSampleSink,
@@ -15,7 +14,7 @@ import { createBoomerangTimeline } from "./boomerang-timeline"
 import { emitRetainedVideoFrame } from "./decoded-video-buffer"
 import { collectVideoMetadata, emitVideoRanges } from "./decoded-video-ranges"
 import { ProcessingError, throwIfAborted } from "./errors"
-import { inspectMedia } from "./inspect-media"
+import { inspectMedia, SOURCE_INPUT_FORMATS } from "./inspect-media"
 import { assertActualOutputSize, assertEstimatedOutputSize, assertInputSize } from "./limits"
 import { waitForMediaCleanup, waitForMediaOperation } from "./media-operation"
 import { ProcessingDiagnostics } from "./processing-diagnostics"
@@ -70,13 +69,13 @@ export async function createBoomerangVideo(
     )
     assertEstimatedOutputSize(encodingBitrate, plan.outputDuration)
     const encodingConfig = createAvcEncodingConfig(encodingBitrate)
-    input = new Input({ formats: [MP4], source: new BlobSource(file) })
+    input = new Input({ formats: SOURCE_INPUT_FORMATS, source: new BlobSource(file) })
     const [videoTrack] = await waitForMediaOperation(input.getVideoTracks(), {
       signal,
       onInterrupt: interruptActiveOutput,
     })
     if (!videoTrack)
-      throw new ProcessingError("unsupported-track-layout", "The MP4 has no video track.")
+      throw new ProcessingError("unsupported-track-layout", "The source has no video track.")
     diagnostics.enter("decoder-capability-check")
     await waitForMediaOperation(assertVideoDecoderAvailable(videoTrack), {
       signal,

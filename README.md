@@ -26,14 +26,15 @@ Processing happens on-device. Brum has no accounts, backend video-processing ser
 intentional video uploads.
 
 > [!IMPORTANT]
-> Inputs are currently limited to MP4 files containing exactly one H.264 video track, at most one
-> source audio track, and no unrelated tracks. Source audio is intentionally discarded, so generated
-> MP4 files are silent. Inputs can be up to 50 MiB and outputs up to 200 MiB. Physical iPhone/Safari
+> Inputs support MP4 and QuickTime/MOV containing exactly one H.264 or HEVC video track, at most one
+> source audio track, and no unrelated tracks. Source audio is intentionally discarded.
+> HEVC input requires the current browser to decode the actual track configuration. Generated
+> H.264 MP4 files are silent. Inputs can be up to 50 MiB and outputs up to 200 MiB. Physical iPhone/Safari
 > validation of the bounded-memory processor is still pending.
 
 ## How it works
 
-Brum inspects the visual track, checks browser AVC decode/encode support, decodes video frames
+Brum inspects the visual track, checks source decode and AVC encode support, decodes video frames
 in presentation order, and emits each cycle forward and then backward. The timeline is re-encoded
 as AVC/H.264 and muxed into a silent MP4, all locally in the browser; source media is never uploaded.
 Playback speed changes emitted frame timing without interpolating frames. Exact-duration targets

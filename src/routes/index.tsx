@@ -110,7 +110,7 @@ function HomePage() {
         <section className="final-cta" aria-labelledby="home-cta-title">
           <div className="final-cta-inner">
             <h2 id="home-cta-title">Give the moment another pass.</h2>
-            <p>Choose a short MP4, pick a target, and create it locally.</p>
+            <p>Choose a short MP4 or MOV, pick a target, and create it locally.</p>
             <Link className="button-primary" to="/tool">
               Open Brum
             </Link>
